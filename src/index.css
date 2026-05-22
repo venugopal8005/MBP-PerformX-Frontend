@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+* {
+  transition-property: background-color, border-color, color, box-shadow, transform;
+  transition-duration: 150ms;
+}

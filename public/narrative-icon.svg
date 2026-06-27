@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="96" y="96" width="832" height="832" rx="150" fill="#0F1524"/>
+  <!-- subtle signal dots -->
+  <circle cx="512" cy="300" r="36" fill="#CBD5E1" opacity="0.48"/>
+  <circle cx="300" cy="512" r="34" fill="#CBD5E1" opacity="0.42"/>
+  <circle cx="512" cy="512" r="34" fill="#CBD5E1" opacity="0.42"/>
+  <circle cx="512" cy="724" r="34" fill="#CBD5E1" opacity="0.42"/>
+  <!-- Narrative N signal path -->
+  <path d="M300 724V300" stroke="#F8FAFC" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M724 300V724" stroke="#F8FAFC" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M300 300L512 512L724 724" stroke="#F8FAFC" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- primary nodes -->
+  <circle cx="300" cy="300" r="43" fill="#F8FAFC"/>
+  <circle cx="300" cy="724" r="43" fill="#F8FAFC"/>
+  <circle cx="724" cy="300" r="43" fill="#F8FAFC"/>
+  <circle cx="724" cy="724" r="43" fill="#F8FAFC"/>
+</svg>

@@ -1,12 +1,15 @@
 export default function Card({
   children,
   className = "",
+  ...props
 }) {
   return (
     <div
+      {...props}
       className={`
-        rounded-xl border border-slate-200 bg-white p-5
-        shadow-[0_1px_2px_rgba(0,0,0,0.04)]
+        rounded-2xl border border-slate-200/90 bg-white p-5
+        shadow-[var(--shadow-card)]
+        dark:border-slate-800 dark:bg-slate-900/80
         ${className}
       `}
     >

@@ -1,0 +1,45 @@
+name: Deploy Frontend to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy frontend
+        run: |
+          ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'EOF'
+            set -e
+
+            cd ~/narrative/frontend
+
+            echo "Pulling latest frontend code..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Installing frontend dependencies..."
+            npm install
+
+            echo "Building frontend..."
+            npm run build
+
+            echo "Deploying frontend build to Nginx..."
+            sudo rm -rf /var/www/narrative/*
+            sudo cp -r dist/* /var/www/narrative/
+
+            echo "Reloading Nginx..."
+            sudo systemctl reload nginx
+
+            echo "Frontend deployment complete."
+          EOF

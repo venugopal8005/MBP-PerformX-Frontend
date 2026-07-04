@@ -189,7 +189,7 @@ export default function Login() {
             {/* SIGNALS */}
             <div className="max-w-[500px]">
               <p className="mb-5 text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-                Live Signals
+                Live Signals 
               </p>
 
               <div className="space-y-4">

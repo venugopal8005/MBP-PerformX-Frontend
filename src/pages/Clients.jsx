@@ -15,7 +15,12 @@ const mapBackendClient = (client) => ({
   id: client._id,
   _id: client._id,
   name: client.name,
-  account: client.account || client.ad_account_name || "Meta account not connected",
+  account:
+    client.meta_ad_account?.name ||
+    client.account ||
+    client.ad_account_name ||
+    "Meta account not assigned",
+  metaAdAccount: client.meta_ad_account || null,
   reports: client.reports || 0,
   campaigns: client.campaigns || 0,
   updated: client.updatedAt ? "Recently updated" : "Just now",

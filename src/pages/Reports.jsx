@@ -10,9 +10,12 @@ import ReportClientSelectModal from "../components/reports/ReportClientSelectMod
 import { ListSkeleton } from "../components/ui/Skeleton";
 
 import {
+  AlertTriangle,
+  Building2,
+  Check,
   CheckCircle2,
   ChevronRight,
-  ExternalLink,
+  Link2,
   PlayCircle,
   Plus,
   RefreshCw,
@@ -22,6 +25,14 @@ import {
 } from "lucide-react";
 
 import api from "../api/axios";
+import { getManualReportDeliveryOutcome } from "../utils/manualReportDelivery";
+
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+const toApiUrl = (path) => {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+};
 
 const INITIAL_REPORT_FORM = {
   client: null,
@@ -271,13 +282,30 @@ const mapBackendClient = (client) => ({
   id: client._id,
   _id: client._id,
   name: client.name,
-  account: client.account || client.ad_account_name || "Meta account not selected",
+  account:
+    client.meta_ad_account?.name ||
+    client.account ||
+    client.ad_account_name ||
+    "Meta account not assigned",
+  metaAdAccount: client.meta_ad_account || null,
   reports: client.reports || 0,
   campaigns: client.campaigns || 0,
   updated: client.updatedAt ? "Recently updated" : "Just now",
   status: client.status || "stable",
   industry: client.industry,
   notes: client.notes,
+});
+
+const mapWorkspaceAdAccount = (account) => ({
+  id: account.id || account._id,
+  meta_ad_account_id: account.id || account._id,
+  ad_account_id: account.ad_account_id,
+  ad_account_name: account.name || account.ad_account_id || "Meta ad account",
+  currency: account.currency || "",
+  timezone_name: account.timezone_name || "",
+  assigned_client: account.assigned_client || null,
+  is_active: account.is_active !== false,
+  is_accessible: account.is_accessible !== false,
 });
 
 const mapBackendReport = (report, clients = []) => {
@@ -310,6 +338,17 @@ const mapBackendReport = (report, clients = []) => {
       latestRun?.client_report?.sent_at ||
       latestRun?.internal_report?.sent_at ||
       "",
+    metaAdAccountId:
+      report.meta_ad_account_id?._id || report.meta_ad_account_id || "",
+    metaAccountName:
+      report.meta_account_name_snapshot ||
+      report.meta_ad_account_id?.name ||
+      "Meta account unresolved",
+    metaAccountExternalId:
+      report.meta_account_external_id_snapshot ||
+      report.meta_ad_account_id?.ad_account_id ||
+      "",
+    metaAccountResolved: Boolean(report.meta_ad_account_id),
     nextRun: report.next_run_at
       ? new Date(report.next_run_at).toLocaleString()
       : report.status === "active"
@@ -317,12 +356,6 @@ const mapBackendReport = (report, clients = []) => {
         : "Paused draft",
   };
 };
-
-const mapAdAccount = (account) => ({
-  id: account.id || `act_${account.account_id}`,
-  ad_account_id: account.id || `act_${account.account_id}`,
-  ad_account_name: account.name || account.account_id || "Meta ad account",
-});
 
 const mapCampaign = (campaign) => ({
   campaign_id: campaign.id,
@@ -359,8 +392,9 @@ export default function Reports() {
   const [showReportBuilderModal, setShowReportBuilderModal] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedAdAccount, setSelectedAdAccount] = useState(null);
+  const [metaAdAccounts, setMetaAdAccounts] = useState([]);
+  const [reassignmentAccount, setReassignmentAccount] = useState(null);
   const [selectedCampaigns, setSelectedCampaigns] = useState([]);
-  const [adAccounts, setAdAccounts] = useState([]);
   const [campaignOptions, setCampaignOptions] = useState([]);
   const [step, setStep] = useState("meta");
   const [reportMode, setReportMode] = useState("create");
@@ -378,8 +412,8 @@ export default function Reports() {
   const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
   const [isCheckingMeta, setIsCheckingMeta] = useState(false);
-  const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false);
-  const [isSelectingAdAccount, setIsSelectingAdAccount] = useState(false);
+  const [isAssigningAdAccount, setIsAssigningAdAccount] = useState(false);
+  const [isSyncingMetaAccounts, setIsSyncingMetaAccounts] = useState(false);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [isLoadingEditReport, setIsLoadingEditReport] = useState(false);
   const [isCreatingReport, setIsCreatingReport] = useState(false);
@@ -430,53 +464,10 @@ export default function Reports() {
         setTeamMemberEmails(parseEmailList(loadedTeamRecipients));
 
         const params = new URLSearchParams(window.location.search);
-        const metaStatus = params.get("meta");
         const returnedClientId = params.get("clientId");
+        const metaStatus = params.get("meta");
 
-        if (metaStatus === "connected" && returnedClientId) {
-          const returnedClient =
-            clients.find((client) => client._id === returnedClientId || client.id === returnedClientId) ||
-            mapBackendClient((await api.get(`/clients/${returnedClientId}`)).data.client);
-
-          if (cancelled) return;
-
-          setSelectedClient(returnedClient);
-          setMetaConnected(true);
-          setShowReportBuilderModal(true);
-          setStep("adAccount");
-          setReportForm({
-            ...INITIAL_REPORT_FORM,
-            client: returnedClient,
-            name: `${returnedClient.name} Weekly Monitor`,
-            recipients: loadedTeamRecipients,
-            internalRecipients: loadedTeamRecipients,
-          });
-          setFlowMessage("Meta connected. Choose the ad account to monitor.");
-          window.history.replaceState({}, "", window.location.pathname);
-
-          try {
-            const accountsRes = await api.get("/meta/ad-accounts", {
-              params: { client_id: returnedClientId },
-            });
-
-            if (!cancelled) {
-              setAdAccounts((accountsRes.data?.accounts || []).map(mapAdAccount));
-            }
-          } catch (err) {
-            if (!cancelled) {
-              setFlowError(
-                err.response?.data?.message || "Meta connected, but ad accounts could not be loaded."
-              );
-            }
-          }
-        }
-
-        if (metaStatus && metaStatus !== "connected") {
-          setFlowError("Meta connection did not complete. Please try again.");
-          window.history.replaceState({}, "", window.location.pathname);
-        }
-
-        if (!metaStatus && returnedClientId) {
+        if (returnedClientId) {
           const returnedClient =
             clients.find((client) => client._id === returnedClientId || client.id === returnedClientId) ||
             mapBackendClient((await api.get(`/clients/${returnedClientId}`)).data.client);
@@ -486,7 +477,6 @@ export default function Reports() {
           setSelectedClient(returnedClient);
           setSelectedAdAccount(null);
           setSelectedCampaigns([]);
-          setAdAccounts([]);
           setCampaignOptions([]);
           setReportForm({
             ...INITIAL_REPORT_FORM,
@@ -497,7 +487,7 @@ export default function Reports() {
           });
           setShowReportBuilderModal(true);
           setStep("meta");
-          setFlowMessage("Create a report for this client.");
+          await loadMetaStep(returnedClient, { oauthStatus: metaStatus });
           window.history.replaceState({}, "", window.location.pathname);
         }
       } catch (err) {
@@ -547,16 +537,6 @@ export default function Reports() {
     } finally {
       setIsLoadingReports(false);
     }
-  };
-
-  const loadAdAccountsForClient = async (clientId) => {
-    const res = await api.get("/meta/ad-accounts", {
-      params: { client_id: clientId },
-    });
-    const accounts = (res.data?.accounts || []).map(mapAdAccount);
-
-    setAdAccounts(accounts);
-    return accounts;
   };
 
   const loadCampaignsForClient = async (clientId, selected = []) => {
@@ -614,8 +594,9 @@ export default function Reports() {
     setShowReportBuilderModal(false);
     setSelectedClient(null);
     setSelectedAdAccount(null);
+    setMetaAdAccounts([]);
+    setReassignmentAccount(null);
     setSelectedCampaigns([]);
-    setAdAccounts([]);
     setCampaignOptions([]);
     setStep("meta");
     setReportMode("create");
@@ -628,8 +609,8 @@ export default function Reports() {
     setReportActionError("");
     setDeleteError("");
     setIsCheckingMeta(false);
-    setIsLoadingAdAccounts(false);
-    setIsSelectingAdAccount(false);
+    setIsAssigningAdAccount(false);
+    setIsSyncingMetaAccounts(false);
     setIsLoadingCampaigns(false);
     setIsLoadingEditReport(false);
     setIsCreatingReport(false);
@@ -732,6 +713,22 @@ export default function Reports() {
       setSelectedClient(client);
       setSelectedCampaigns(selectedCampaignIds);
       setCampaignOptions(form.campaigns);
+      setSelectedAdAccount(
+        report.meta_ad_account_id
+          ? {
+              id: report.meta_ad_account_id?._id || report.meta_ad_account_id,
+              meta_ad_account_id:
+                report.meta_ad_account_id?._id || report.meta_ad_account_id,
+              ad_account_id:
+                report.meta_account_external_id_snapshot ||
+                report.meta_ad_account_id?.ad_account_id,
+              ad_account_name:
+                report.meta_account_name_snapshot ||
+                report.meta_ad_account_id?.name ||
+                "Meta ad account",
+            }
+          : null
+      );
       setReportForm(form);
       setStep("settings");
 
@@ -742,21 +739,20 @@ export default function Reports() {
 
         setMetaConnected(Boolean(statusRes.data?.connected));
 
-        if (statusRes.data?.ad_account_id) {
+        if (
+          !report.meta_ad_account_id &&
+          statusRes.data?.ad_account_id &&
+          statusRes.data?.is_accessible !== false
+        ) {
           setSelectedAdAccount({
-            id: statusRes.data.ad_account_id,
+            id: statusRes.data.meta_ad_account_id,
+            meta_ad_account_id: statusRes.data.meta_ad_account_id,
             ad_account_id: statusRes.data.ad_account_id,
             ad_account_name: statusRes.data.ad_account_name || statusRes.data.ad_account_id,
           });
         }
       } catch {
         setMetaConnected(false);
-      }
-
-      try {
-        await loadAdAccountsForClient(clientId);
-      } catch {
-        setFlowError("Report loaded, but Meta ad accounts could not be loaded.");
       }
 
       try {
@@ -779,7 +775,7 @@ export default function Reports() {
     loadClients();
   };
 
-  const checkMetaStatus = async (client) => {
+  async function loadMetaStep(client, { oauthStatus = "" } = {}) {
     const clientId = clientIdOf(client);
 
     if (!isMongoObjectId(clientId)) {
@@ -792,39 +788,52 @@ export default function Reports() {
     setFlowMessage("");
 
     try {
-      const res = await api.get("/meta/status", {
-        params: { client_id: clientId },
-      });
+      const [statusRes, accountsRes] = await Promise.all([
+        api.get("/meta/status", { params: { client_id: clientId } }),
+        api.get("/settings/meta/ad-accounts"),
+      ]);
+      const isConnected = Boolean(statusRes.data?.connected);
+      const accounts = (accountsRes.data?.ad_accounts || [])
+        .map(mapWorkspaceAdAccount)
+        .filter((account) => account.is_active && account.is_accessible);
+      const assignedAccount = accounts.find(
+        (account) =>
+          String(account.assigned_client?.id || "") === String(clientId) ||
+          String(account.meta_ad_account_id) === String(statusRes.data?.meta_ad_account_id || "")
+      );
 
-      if (res.data?.connected) {
-        setMetaConnected(true);
-        setFlowMessage("Meta is connected for this client.");
+      setMetaConnected(isConnected);
+      setMetaAdAccounts(isConnected ? accounts : []);
+      setSelectedAdAccount(assignedAccount || (accounts.length === 1 ? accounts[0] : null));
 
-        if (res.data.ad_account_id) {
-          setSelectedAdAccount({
-            id: res.data.ad_account_id,
-            ad_account_id: res.data.ad_account_id,
-            ad_account_name: res.data.ad_account_name || res.data.ad_account_id,
-          });
+      if (["connected", "connected-sync-failed"].includes(oauthStatus)) {
+        if (oauthStatus === "connected-sync-failed") {
+          setFlowError("Meta connected, but the first account sync did not finish. Sync accounts and try again.");
+        } else {
+          setFlowMessage("Meta connected. Choose the ad account for this client.");
         }
-      } else {
-        setMetaConnected(false);
+      } else if (oauthStatus) {
+        setFlowError("Meta connection did not complete. Please try connecting again.");
+      } else if (assignedAccount) {
+        setFlowMessage("This client's assigned Meta account is ready.");
       }
     } catch (err) {
       setMetaConnected(false);
-      setFlowError(err.response?.data?.message || "Could not check Meta connection.");
+      setMetaAdAccounts([]);
+      setSelectedAdAccount(null);
+      setFlowError(err.response?.data?.message || "Could not load Meta accounts.");
     } finally {
       setIsCheckingMeta(false);
     }
-  };
+  }
 
   const continueWithClient = (client) => {
     const defaultTeamRecipients = serializeEmails(teamMemberEmails);
 
     setSelectedClient(client);
     setSelectedAdAccount(null);
+    setMetaAdAccounts([]);
     setSelectedCampaigns([]);
-    setAdAccounts([]);
     setCampaignOptions([]);
     setReportForm({
       ...INITIAL_REPORT_FORM,
@@ -837,7 +846,7 @@ export default function Reports() {
     setShowClientSelectModal(false);
     setShowReportBuilderModal(true);
     setStep("meta");
-    checkMetaStatus(client);
+    loadMetaStep(client);
   };
 
   const handleCreateClient = async (clientDraft) => {
@@ -866,32 +875,34 @@ export default function Reports() {
     const clientId = clientIdOf(selectedClient);
 
     if (!isMongoObjectId(clientId)) {
-      setFlowError("Create a backend client before connecting Meta.");
+      setFlowError("Save this client before connecting Meta.");
       return;
     }
 
-    window.location.assign(`/api/meta/connect?client_id=${clientId}`);
+    const returnTo = `/reports?clientId=${encodeURIComponent(clientId)}`;
+    window.location.href = toApiUrl(
+      `/settings/meta/connect/start?returnTo=${encodeURIComponent(returnTo)}`
+    );
   };
 
-  const fetchAdAccounts = async () => {
-    const clientId = clientIdOf(selectedClient);
-
-    setIsLoadingAdAccounts(true);
+  const syncMetaAccounts = async () => {
+    setIsSyncingMetaAccounts(true);
     setFlowError("");
     setFlowMessage("");
 
     try {
-      const accounts = await loadAdAccountsForClient(clientId);
+      const res = await api.post("/settings/meta/sync-all");
+      await loadMetaStep(selectedClient);
 
-      setStep("adAccount");
-
-      if (!accounts.length) {
-        setFlowError("No Meta ad accounts were returned for this connection.");
+      if (res.data?.success === false) {
+        setFlowError(res.data?.message || "Meta accounts synced with connection warnings.");
+      } else {
+        setFlowMessage(res.data?.message || "Meta ad accounts synced.");
       }
     } catch (err) {
-      setFlowError(err.response?.data?.message || "Could not load Meta ad accounts.");
+      setFlowError(err.response?.data?.message || "Could not sync Meta ad accounts.");
     } finally {
-      setIsLoadingAdAccounts(false);
+      setIsSyncingMetaAccounts(false);
     }
   };
 
@@ -922,29 +933,98 @@ export default function Reports() {
     }
   };
 
-  const selectAdAccountAndContinue = async () => {
+  const updateClientAccountAssignment = (account) => {
     const clientId = clientIdOf(selectedClient);
+    const assignedAccount = {
+      ...account,
+      assigned_client: { id: clientId, name: selectedClient.name },
+    };
+    const clientMetaAccount = {
+      _id: assignedAccount.meta_ad_account_id,
+      name: assignedAccount.ad_account_name,
+      ad_account_id: assignedAccount.ad_account_id,
+    };
 
+    setSelectedAdAccount(assignedAccount);
+    setMetaAdAccounts((current) =>
+      current.map((item) => {
+        if (String(item.meta_ad_account_id) === String(assignedAccount.meta_ad_account_id)) {
+          return assignedAccount;
+        }
+
+        if (String(item.assigned_client?.id || "") === String(clientId)) {
+          return { ...item, assigned_client: null };
+        }
+
+        return item;
+      })
+    );
+    setSelectedClient((current) => ({
+      ...current,
+      account: assignedAccount.ad_account_name,
+      metaAdAccount: clientMetaAccount,
+    }));
+    setClientList((current) =>
+      current.map((client) =>
+        String(clientIdOf(client)) === String(clientId)
+          ? { ...client, account: assignedAccount.ad_account_name, metaAdAccount: clientMetaAccount }
+          : client
+      )
+    );
+  };
+
+  const assignAdAccountAndContinue = async (confirmReassignment = false) => {
     if (!selectedAdAccount) {
-      setFlowError("Choose an ad account first.");
+      setFlowError("Choose a Meta ad account first.");
       return;
     }
 
-    setIsSelectingAdAccount(true);
+    const clientId = clientIdOf(selectedClient);
+    const assignedClientId = selectedAdAccount.assigned_client?.id || "";
+    const clientHasAnotherAccount = metaAdAccounts.some(
+      (account) =>
+        String(account.assigned_client?.id || "") === String(clientId) &&
+        String(account.meta_ad_account_id) !== String(selectedAdAccount.meta_ad_account_id)
+    );
+    const movesFromAnotherClient =
+      Boolean(assignedClientId) && String(assignedClientId) !== String(clientId);
+
+    if (!confirmReassignment && (movesFromAnotherClient || clientHasAnotherAccount)) {
+      setReassignmentAccount(selectedAdAccount);
+      return;
+    }
+
+    if (String(assignedClientId) === String(clientId)) {
+      await fetchCampaigns();
+      return;
+    }
+
+    setIsAssigningAdAccount(true);
     setFlowError("");
 
     try {
-      await api.post("/meta/select-account", {
-        client_id: clientId,
-        ad_account_id: selectedAdAccount.ad_account_id,
-        ad_account_name: selectedAdAccount.ad_account_name,
-      });
+      const res = await api.patch(
+        `/settings/meta/ad-accounts/${selectedAdAccount.meta_ad_account_id}/assign-client`,
+        {
+          clientId,
+          confirmReassignment,
+        }
+      );
+      const assignedAccount = res.data?.ad_account
+        ? mapWorkspaceAdAccount(res.data.ad_account)
+        : selectedAdAccount;
 
+      setReassignmentAccount(null);
+      updateClientAccountAssignment(assignedAccount);
       await fetchCampaigns();
     } catch (err) {
-      setFlowError(err.response?.data?.message || "Could not select this ad account.");
+      if (err.response?.status === 409 && err.response?.data?.requiresConfirmation) {
+        setReassignmentAccount(selectedAdAccount);
+      } else {
+        setFlowError(err.response?.data?.message || "Could not assign this Meta ad account.");
+      }
     } finally {
-      setIsSelectingAdAccount(false);
+      setIsAssigningAdAccount(false);
     }
   };
 
@@ -1007,6 +1087,7 @@ export default function Reports() {
 
   const buildReportPayload = ({ includeStatus = true } = {}) => ({
     client_id: clientIdOf(selectedClient),
+    meta_ad_account_id: selectedAdAccount?.meta_ad_account_id || selectedAdAccount?.id || null,
     name: reportForm.name.trim(),
     type: reportForm.frequency,
     frequency: reportForm.frequency,
@@ -1061,6 +1142,12 @@ export default function Reports() {
         insight: "Monitor configured. Signals will appear after the first run.",
         frequency: formatFrequency(savedReport.type || reportForm.frequency),
         status: savedReport.severity || "low",
+        metaAdAccountId: savedReport.meta_ad_account_id,
+        metaAccountName:
+          savedReport.meta_account_name_snapshot || selectedAdAccount?.ad_account_name,
+        metaAccountExternalId:
+          savedReport.meta_account_external_id_snapshot || selectedAdAccount?.ad_account_id,
+        metaAccountResolved: Boolean(savedReport.meta_ad_account_id),
         nextRun: "Paused draft",
       };
 
@@ -1155,13 +1242,22 @@ export default function Reports() {
     setReportActionError("");
 
     try {
-      await api.post("/reports/manual-send", {
+      const response = await api.post("/reports/manual-send", {
         reportId: createdReport.databaseId,
       });
+      const outcome = getManualReportDeliveryOutcome(response.data);
 
-      setReportActionMessage("Manual send started. The backend is generating and sending the report now.");
+      if (!outcome.confirmed) {
+        throw new Error(outcome.message);
+      }
+
+      setReportActionMessage(outcome.message);
     } catch (err) {
-      setReportActionError(err.response?.data?.message || "Manual send failed. Please try again.");
+      setReportActionError(
+        err.response?.data?.message ||
+        err.message ||
+        "Report generated, but email delivery failed."
+      );
     } finally {
       setIsSendingNow(false);
     }
@@ -1371,10 +1467,6 @@ export default function Reports() {
               <ChevronRight size={14} className="mx-2 inline" />
               <span className={step === "meta" ? "font-medium text-slate-900 dark:text-slate-100" : ""}>Meta</span>
               <ChevronRight size={14} className="mx-2 inline" />
-              <span className={step === "adAccount" ? "font-medium text-slate-900 dark:text-slate-100" : ""}>
-                Ad Account
-              </span>
-              <ChevronRight size={14} className="mx-2 inline" />
               <span className={step === "campaigns" ? "font-medium text-slate-900 dark:text-slate-100" : ""}>
                 Campaigns
               </span>
@@ -1399,104 +1491,156 @@ export default function Reports() {
 
               {step === "meta" && (
                 <>
-                  <h2 className="text-xl font-semibold text-slate-900">Connect Meta</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Authorize read-only Meta Ads access for {selectedClient.name}.
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Meta Ads account</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Choose and assign the account this report should monitor.
                   </p>
 
-                  <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
-                    <p className="text-sm font-semibold text-slate-900">
-                      {metaConnected ? "Meta is connected" : "Meta connection required"}
-                    </p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      Narrative reads ad accounts and campaign data. It does not change budgets,
-                      bids, or creative.
-                    </p>
-                  </div>
+                  {isCheckingMeta ? (
+                    <div className="mt-6 space-y-3">
+                      <div className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                      <div className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                    </div>
+                  ) : !metaConnected ? (
+                    <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-950/40">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                          <Link2 size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            Connect your workspace to Meta Ads
+                          </p>
+                          <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-slate-400">
+                            Connect once, then choose from every ad account available to this Meta profile.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={connectMeta}
+                        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+                      >
+                        <Link2 size={16} />
+                        Connect Meta account
+                      </button>
+                    </div>
+                  ) : metaAdAccounts.length ? (
+                    <div className="mt-6 space-y-3">
+                      {metaAdAccounts.map((account) => {
+                        const isSelected =
+                          String(selectedAdAccount?.meta_ad_account_id || "") ===
+                          String(account.meta_ad_account_id);
+                        const isCurrentClient =
+                          String(account.assigned_client?.id || "") ===
+                          String(clientIdOf(selectedClient));
+                        const assignmentLabel = isCurrentClient
+                          ? `Assigned to ${selectedClient.name}`
+                          : account.assigned_client?.name
+                            ? `Assigned to ${account.assigned_client.name}`
+                            : "Unassigned";
 
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <button
-                      onClick={connectMeta}
-                      className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white"
-                    >
-                      <ExternalLink size={16} />
-                      {metaConnected ? "Reconnect Meta" : "Connect Meta"}
-                    </button>
+                        return (
+                          <button
+                            key={account.meta_ad_account_id}
+                            type="button"
+                            onClick={() => setSelectedAdAccount(account)}
+                            className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition ${
+                              isSelected
+                                ? "border-slate-900 bg-slate-50 shadow-sm dark:border-slate-200 dark:bg-slate-800/70"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"
+                            }`}
+                          >
+                            <span
+                              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                isSelected
+                                  ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950"
+                                  : "border-slate-300 dark:border-slate-600"
+                              }`}
+                            >
+                              {isSelected && <Check size={12} strokeWidth={3} />}
+                            </span>
 
-                    <button
-                      onClick={metaConnected ? fetchAdAccounts : () => checkMetaStatus(selectedClient)}
-                      disabled={isCheckingMeta || isLoadingAdAccounts}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      <RefreshCw size={16} />
-                      {metaConnected
-                        ? isLoadingAdAccounts
-                          ? "Loading accounts..."
-                          : "Continue"
-                        : isCheckingMeta
-                          ? "Checking..."
-                          : "Check Connection"}
-                    </button>
-                  </div>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                  {account.ad_account_name}
+                                </span>
+                                <span
+                                  className={`rounded-full px-2 py-1 text-xs font-medium ${
+                                    isCurrentClient
+                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                      : account.assigned_client?.name
+                                        ? "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                  }`}
+                                >
+                                  {assignmentLabel}
+                                </span>
+                              </span>
+                              <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                                {account.ad_account_id}
+                                {account.currency ? ` - ${account.currency}` : ""}
+                                {account.timezone_name ? ` - ${account.timezone_name}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-slate-700 dark:bg-slate-950/40">
+                      <Building2 size={20} className="mx-auto text-slate-400" />
+                      <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        No ad accounts synced yet
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Sync the accounts available to your connected Meta profile.
+                      </p>
+                    </div>
+                  )}
+
+                  {metaConnected && (
+                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={syncMetaAccounts}
+                        disabled={isSyncingMetaAccounts || isAssigningAdAccount || isLoadingCampaigns}
+                        className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <RefreshCw size={16} className={isSyncingMetaAccounts ? "animate-spin" : ""} />
+                        {isSyncingMetaAccounts ? "Syncing..." : "Sync accounts"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => assignAdAccountAndContinue(false)}
+                        disabled={!selectedAdAccount || isAssigningAdAccount || isLoadingCampaigns}
+                        className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                      >
+                        {isAssigningAdAccount || isLoadingCampaigns ? (
+                          <RefreshCw size={16} className="animate-spin" />
+                        ) : (
+                          <ChevronRight size={16} />
+                        )}
+                        {isAssigningAdAccount
+                          ? "Assigning..."
+                          : isLoadingCampaigns
+                            ? "Loading campaigns..."
+                            : String(selectedAdAccount?.assigned_client?.id || "") ===
+                                String(clientIdOf(selectedClient))
+                              ? "Continue"
+                              : "Assign & continue"}
+                      </button>
+                    </div>
+                  )}
 
                   <button
                     onClick={() => {
                       setShowReportBuilderModal(false);
                       setShowClientSelectModal(true);
                     }}
-                    className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3"
-                  >
-                    Back
-                  </button>
-                </>
-              )}
-
-              {step === "adAccount" && (
-                <>
-                  <h2 className="text-xl font-semibold text-slate-900">Select Ad Account</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Choose the Meta ad account this report should monitor.
-                  </p>
-
-                  <div className="mt-6 space-y-3">
-                    {adAccounts.map((account) => {
-                      const checked = selectedAdAccount?.ad_account_id === account.ad_account_id;
-
-                      return (
-                        <button
-                          key={account.ad_account_id}
-                          type="button"
-                          onClick={() => setSelectedAdAccount(account)}
-                          className={`flex w-full items-center justify-between rounded-xl border px-4 py-4 text-left transition ${
-                            checked ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
-                          }`}
-                        >
-                          <span className="text-sm font-semibold text-slate-900">
-                            {account.ad_account_name}
-                          </span>
-                          <span className="text-xs text-slate-400">{account.ad_account_id}</span>
-                        </button>
-                      );
-                    })}
-
-                    {!adAccounts.length && (
-                      <div className="rounded-xl border border-dashed border-slate-300 px-5 py-8 text-center text-sm text-slate-500">
-                        {isLoadingAdAccounts ? "Loading ad accounts..." : "No ad accounts loaded yet."}
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={selectAdAccountAndContinue}
-                    disabled={!selectedAdAccount || isSelectingAdAccount || isLoadingCampaigns}
-                    className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-3 text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {isSelectingAdAccount || isLoadingCampaigns ? "Loading campaigns..." : "Continue"}
-                  </button>
-
-                  <button
-                    onClick={reportMode === "edit" ? () => setStep("settings") : () => setStep("meta")}
-                    className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3"
+                    className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-slate-700 dark:text-slate-200"
                   >
                     Back
                   </button>
@@ -1544,7 +1688,7 @@ export default function Reports() {
                   </button>
 
                   <button
-                    onClick={reportMode === "edit" ? () => setStep("settings") : () => setStep("adAccount")}
+                    onClick={reportMode === "edit" ? () => setStep("settings") : () => setStep("meta")}
                     className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3"
                   >
                     Back
@@ -1583,10 +1727,10 @@ export default function Reports() {
                       </p>
                       <button
                         type="button"
-                        onClick={() => setStep("adAccount")}
+                        onClick={connectMeta}
                         className="mt-3 text-sm font-medium text-slate-600 underline-offset-4 hover:text-slate-900 hover:underline"
                       >
-                        Change ad account
+                        Manage assignment
                       </button>
                     </div>
 
@@ -2040,6 +2184,54 @@ export default function Reports() {
               )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reassignmentAccount && selectedClient && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-start gap-3 border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">
+                  Change Meta account assignment?
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-slate-400">
+                  {reassignmentAccount.assigned_client?.name
+                    ? `${reassignmentAccount.ad_account_name} is currently assigned to ${reassignmentAccount.assigned_client.name}.`
+                    : `${selectedClient.name} already has another Meta ad account assigned.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-5">
+              <p className="text-sm leading-6 text-slate-700 dark:text-slate-300">
+                Assigning it to {selectedClient.name} will update the client assignment. Existing reports keep their original account snapshot.
+              </p>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReassignmentAccount(null)}
+                  disabled={isAssigningAdAccount}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => assignAdAccountAndContinue(true)}
+                  disabled={isAssigningAdAccount}
+                  className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAssigningAdAccount && <RefreshCw size={15} className="animate-spin" />}
+                  {isAssigningAdAccount ? "Assigning..." : "Assign & continue"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

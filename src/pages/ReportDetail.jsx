@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   Ban,
   CalendarClock,
   Clock3,
@@ -9,10 +10,12 @@ import {
 } from "lucide-react";
 
 import api from "../api/axios";
+import ReportQuickLookMetrics from "../components/reports/ReportQuickLookMetrics";
 import ConfidenceBadge from "../components/ui/ConfidenceBadge";
 import FrequencyBadge from "../components/ui/FrequencyBadge";
 import { CardSkeleton, ListSkeleton } from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
+import { getManualReportDeliveryOutcome } from "../utils/manualReportDelivery";
 import { getSignalAppearance } from "../utils/signalAppearance";
 
 const formatDateTime = (value) => {
@@ -79,6 +82,7 @@ export default function ReportDetail() {
   const [isSending, setIsSending] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [safetyOverridePrompt, setSafetyOverridePrompt] = useState(null);
   const [activePreviewTab, setActivePreviewTab] = useState(
     previewParam === "internal" ? "internal" : "client"
   );
@@ -102,11 +106,21 @@ export default function ReportDetail() {
     setMessage("");
 
     try {
-      await api.post("/reports/manual-send", { reportId });
-      setMessage("Manual send started. Narrative history will refresh with the latest run.");
+      const response = await api.post("/reports/manual-send", { reportId });
+      const outcome = getManualReportDeliveryOutcome(response.data);
+
+      if (!outcome.confirmed) {
+        throw new Error(outcome.message);
+      }
+
+      setMessage(outcome.message);
       applyReportHistory(await fetchReportHistory());
     } catch (err) {
-      setError(err.response?.data?.message || "Manual send failed.");
+      setError(
+        err.response?.data?.message ||
+        err.message ||
+        "Report generated, but email delivery failed."
+      );
       fetchReportHistory()
         .then(applyReportHistory)
         .catch(() => null);
@@ -115,7 +129,7 @@ export default function ReportDetail() {
     }
   };
 
-  const approveAndSend = async (runId) => {
+  const approveAndSend = async (runId, { overrideSafety = false } = {}) => {
     if (!runId) return;
 
     setIsApproving(true);
@@ -123,11 +137,35 @@ export default function ReportDetail() {
     setMessage("");
 
     try {
-      await api.post(`/report-runs/${runId}/client-report/approve-send`);
-      setMessage("Client report approved and sent.");
+      await api.post(`/report-runs/${runId}/client-report/approve-send`, {
+        overrideSafety,
+      });
+      setSafetyOverridePrompt(null);
+      setMessage(
+        overrideSafety
+          ? "Client report sent with safety override recorded."
+          : "Client report approved and sent."
+      );
       applyReportHistory(await fetchReportHistory());
     } catch (err) {
+      const data = err.response?.data || {};
+
+      if (data.requiresOverride) {
+        setSafetyOverridePrompt({
+          runId,
+          safety: data.safety || {},
+          message: data.message,
+        });
+        fetchReportHistory()
+          .then(applyReportHistory)
+          .catch(() => null);
+        return;
+      }
+
       const safetyReasons = err.response?.data?.safety?.reasons || [];
+      if (overrideSafety) {
+        setSafetyOverridePrompt(null);
+      }
       setError(
         safetyReasons.length
           ? `Client report blocked: ${safetyReasons.join(" ")}`
@@ -200,11 +238,17 @@ export default function ReportDetail() {
     ? report.internal_recipients
     : report?.recipients || [];
   const latestRun = runs[0] || null;
+  const reportMetaAccountName =
+    report?.meta_account_name_snapshot || report?.meta_ad_account_id?.name || "";
+  const reportMetaAccountId =
+    report?.meta_account_external_id_snapshot || report?.meta_ad_account_id?.ad_account_id || "";
+  const hasResolvedMetaAccount = Boolean(report?.meta_ad_account_id);
   const previewReport =
     activePreviewTab === "internal"
       ? latestRun?.internal_report
       : latestRun?.client_report;
   const latestClientReport = latestRun?.client_report;
+  const overrideReasons = safetyOverridePrompt?.safety?.reasons || [];
   const canApproveLatest =
     latestRun?._id &&
     ["awaiting_approval", "held_for_review"].includes(latestClientReport?.status);
@@ -251,6 +295,11 @@ export default function ReportDetail() {
 
                   <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
                     <span>{clientName}</span>
+                    <span>
+                      {hasResolvedMetaAccount
+                        ? `Meta: ${reportMetaAccountName}${reportMetaAccountId ? ` (${reportMetaAccountId})` : ""}`
+                        : "Meta account unresolved"}
+                    </span>
                     <span>{report?.monitored_campaigns?.length || 0} campaigns</span>
                     <FrequencyBadge frequency={report?.type || "daily"} />
                     <span className="inline-flex items-center gap-1">
@@ -272,7 +321,7 @@ export default function ReportDetail() {
                   <button
                     type="button"
                     onClick={sendNow}
-                    disabled={isSending}
+                    disabled={isSending || !hasResolvedMetaAccount}
                     className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
                   >
                     <Play size={15} />
@@ -290,10 +339,23 @@ export default function ReportDetail() {
           </div>
         )}
 
+        {!isLoading && !hasResolvedMetaAccount && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Meta account needs to be assigned to this report before it can run. Complete the Meta migration or reconnect the report account.
+          </div>
+        )}
+
         {message && (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             {message}
           </div>
+        )}
+
+        {!isLoading && latestRun?._id && (
+          <ReportQuickLookMetrics
+            reportRunId={latestRun._id}
+            variant={activePreviewTab === "internal" ? "internal" : "client"}
+          />
         )}
 
         {!isLoading && latestRun?.client_report && latestRun?.internal_report && (
@@ -517,6 +579,76 @@ export default function ReportDetail() {
           </div>
         )}
       </aside>
+
+      {safetyOverridePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">
+                    Send report despite warnings?
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    Narrative found issues with this report&apos;s data quality or trust level.
+                    You can still send it manually, but review the warnings before continuing.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-100">
+                This report has data quality or trust warnings. Sending may expose incomplete
+                or unreliable performance context to the client.
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/70">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                  Safety reasons
+                </p>
+                {overrideReasons.length ? (
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                    {overrideReasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                    Safety checks failed, but no detailed reason was returned.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSafetyOverridePrompt(null)}
+                disabled={isApproving}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  approveAndSend(safetyOverridePrompt.runId, {
+                    overrideSafety: true,
+                  })
+                }
+                disabled={isApproving}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-300"
+              >
+                {isApproving ? "Sending..." : "Send Anyway"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

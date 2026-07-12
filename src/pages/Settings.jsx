@@ -210,6 +210,7 @@ const tokenSummary = (connection = {}) => {
 };
 
 const accountAttentionCopy = (reason) => {
+  if (reason === "inaccessible") return "This account is no longer accessible through the connected Meta identity.";
   if (reason === "unassigned") return "Assign this ad account to a client before creating reports.";
   if (reason === "connection_issue") return "Reports may fail until the Meta connection is restored.";
   if (reason === "removed") return "This ad account was removed from the workspace.";
@@ -948,7 +949,7 @@ export default function Settings() {
     const adAccountCount = connection.ad_accounts_count || 0;
     const reportCount = connection.affected_reports_count || connection.reports_count || 0;
     const message = [
-      `Remove ${profileName}?`,
+      `Disconnect ${profileName}?`,
       "",
       `This connection is linked to ${adAccountCount} ad account${adAccountCount === 1 ? "" : "s"}.`,
       `${reportCount} active report${reportCount === 1 ? "" : "s"} may fail until access is restored.`,
@@ -965,7 +966,7 @@ export default function Settings() {
     try {
       await api.delete(`/settings/meta/connections/${connection.id}`);
       await reloadMeta();
-      setNotice("Meta connection removed.");
+      setNotice("Meta connection disconnected.");
     } catch (err) {
       setError(err.response?.data?.message || "Could not remove connection.");
     } finally {
@@ -979,8 +980,31 @@ export default function Settings() {
     setError("");
 
     try {
+      const account = adAccounts.find((item) => item.id === accountId);
+      const nextClientId = assignments[accountId] || null;
+      const currentClientId = account?.assigned_client?.id || null;
+      const clientAlreadyAssignedAccount = nextClientId
+        ? adAccounts.find(
+            (item) => item.id !== accountId && item.assigned_client?.id === nextClientId
+          )
+        : null;
+      const requiresConfirmation =
+        Boolean(currentClientId && currentClientId !== nextClientId) ||
+        Boolean(clientAlreadyAssignedAccount);
+
+      if (
+        requiresConfirmation &&
+        !window.confirm(
+          "Change Meta ad account?\n\nNew reports for this client will use the newly assigned account. Existing reports will remain linked to the Meta ad account they were created with."
+        )
+      ) {
+        setSaving("");
+        return;
+      }
+
       await api.patch(`/settings/meta/ad-accounts/${accountId}/assign-client`, {
-        clientId: assignments[accountId] || null,
+        clientId: nextClientId,
+        confirmReassignment: requiresConfirmation,
       });
       await reloadMeta();
       setNotice("Ad account assignment saved.");
@@ -1222,9 +1246,11 @@ export default function Settings() {
           title="Meta Integration"
           action={
             <div className="flex flex-wrap gap-2">
-              <Button variant="primary" icon={Link2} onClick={connectMeta}>
-                Connect Meta Account
-              </Button>
+              {!activeConnections.length && (
+                <Button variant="primary" icon={Link2} onClick={connectMeta}>
+                  Connect Meta Account
+                </Button>
+              )}
               <Button
                 icon={RefreshCw}
                 disabled={!activeConnections.length}
@@ -1240,7 +1266,7 @@ export default function Settings() {
           <div className="space-y-5">
             <div>
               <p className="text-sm text-slate-600">
-                Connect Meta profiles, sync ad accounts, and manage report access.
+                Connect Meta once, sync accessible ad accounts, and assign them to clients.
               </p>
             </div>
 
@@ -1266,13 +1292,13 @@ export default function Settings() {
               </div>
             ) : (
               <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                If an ad account is missing, get access in Meta Business Manager, then sync again or connect another Meta profile.
+                If an ad account is missing, get access in Meta Business Manager and sync the workspace connection again.
               </div>
             )}
           </div>
         </Card>
 
-        <Card title="Connected Meta Profiles">
+        <Card title="Connected Meta Profile">
           {metaConnections.length ? (
             <div className="space-y-3">
               {metaConnections.map((connection) => {
@@ -1323,7 +1349,7 @@ export default function Settings() {
                           busy={saving === `remove-${connection.id}`}
                           onClick={() => removeConnection(connection)}
                         >
-                          Remove
+                          Disconnect
                         </Button>
                       </div>
                     </div>
@@ -1480,7 +1506,7 @@ export default function Settings() {
                         <Field label="Assigned client">
                           <Select
                             value={selectedAssignment}
-                            disabled={!clients.length || !account.is_active}
+                            disabled={!clients.length || !account.is_active || account.is_accessible === false}
                             onChange={(event) =>
                               setAssignments((current) => ({ ...current, [account.id]: event.target.value }))
                             }
@@ -1496,7 +1522,7 @@ export default function Settings() {
                         )}
                         <div className="flex flex-wrap gap-2">
                           <Button
-                            disabled={!hasChanged || !clients.length || !account.is_active}
+                            disabled={!hasChanged || !clients.length || !account.is_active || account.is_accessible === false}
                             busy={saving === `assign-${account.id}`}
                             onClick={() => assignAdAccount(account.id)}
                           >
@@ -1512,7 +1538,7 @@ export default function Settings() {
                           <Button
                             icon={RefreshCw}
                             busy={saving === `campaigns-${account.id}`}
-                            disabled={!account.is_active || blocksCampaignRefresh}
+                            disabled={!account.is_active || account.is_accessible === false || blocksCampaignRefresh}
                             onClick={() => refreshCampaigns(account)}
                           >
                             Refresh campaigns

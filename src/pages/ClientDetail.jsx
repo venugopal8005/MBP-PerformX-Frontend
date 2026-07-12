@@ -5,6 +5,7 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  Link2Off,
   Plus,
   RefreshCw,
 } from "lucide-react";
@@ -145,7 +146,24 @@ export default function ClientDetail() {
   const clientStatus = client?.status || "stable";
 
   const connectMeta = () => {
-    window.location.assign(`/api/meta/connect?client_id=${clientId}`);
+    navigate("/settings?tab=meta-connections");
+  };
+
+  const unassignMetaAccount = async () => {
+    const accountId = client?.meta_ad_account?._id;
+    if (!accountId) return;
+    if (!window.confirm("Unassign this Meta ad account? Existing reports will remain linked to it.")) {
+      return;
+    }
+
+    try {
+      await api.patch(`/settings/meta/ad-accounts/${accountId}/assign-client`, {
+        clientId: null,
+      });
+      await loadClientDetail();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not unassign this Meta ad account.");
+    }
   };
 
   return (
@@ -177,8 +195,23 @@ export default function ClientDetail() {
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <ExternalLink size={15} />
-                Connect Ad Account
+                {metaStatus?.connected
+                  ? client?.meta_ad_account
+                    ? "Change account"
+                    : "Assign Meta account"
+                  : "Go to Meta settings"}
               </button>
+
+              {client?.meta_ad_account && (
+                <button
+                  type="button"
+                  onClick={unassignMetaAccount}
+                  className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 shadow-sm transition hover:bg-rose-50 dark:border-rose-900/70 dark:bg-slate-900 dark:text-rose-300"
+                >
+                  <Link2Off size={15} />
+                  Unassign
+                </button>
+              )}
 
               <button
                 type="button"
@@ -214,9 +247,11 @@ export default function ClientDetail() {
                   </div>
 
                   <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                    {metaStatus?.connected
-                      ? `Meta account: ${metaStatus.ad_account_name || metaStatus.ad_account_id}`
-                      : "Meta account not connected"}
+                    {!metaStatus?.connected
+                      ? "Meta Ads is not connected for this workspace."
+                      : client?.meta_ad_account
+                        ? `Meta account: ${client.meta_ad_account.name} (${client.meta_ad_account.ad_account_id})`
+                        : "No Meta ad account assigned. Assign one available to this workspace."}
                   </p>
                 </div>
 

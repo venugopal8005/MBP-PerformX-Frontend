@@ -13,6 +13,8 @@ export default function ReportCard({
   frequency,
   status,
   nextRun,
+  metaAccountName,
+  metaAccountResolved = true,
   clientDeliveryMode,
   latestRunId,
   latestInternalStatus,
@@ -68,6 +70,11 @@ export default function ReportCard({
 
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {client} - {campaigns} campaigns
+          </p>
+          <p className={`mt-1 text-xs ${metaAccountResolved ? "text-slate-400" : "font-medium text-amber-600"}`}>
+            {metaAccountResolved
+              ? `Meta account: ${metaAccountName}`
+              : "Meta account needs to be assigned before this report can run."}
           </p>
         </div>
 

@@ -1,4 +1,4 @@
-import { ChevronRight, Clock3, Pencil, Trash2 } from "lucide-react";
+import { Archive, ChevronRight, Clock3, Pencil } from "lucide-react";
 
 export default function ClientCard({
   id,
@@ -88,9 +88,9 @@ export default function ClientCard({
             }}
             disabled={isDeleting}
             className="rounded-md p-1 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
-            aria-label={`Delete ${name}`}
+            aria-label={`Archive ${name}`}
           >
-            <Trash2 size={16} />
+            <Archive size={16} />
           </button>
         </div>
 

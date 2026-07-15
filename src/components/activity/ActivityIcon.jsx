@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Archive,
   BadgeDollarSign,
   CheckCircle2,
   Circle,
@@ -36,6 +37,7 @@ import { getActivityPresentation } from "./activityPresentation";
 const ICONS = {
   Activity,
   AlertTriangle,
+  Archive,
   BadgeDollarSign,
   CheckCircle2,
   Circle,

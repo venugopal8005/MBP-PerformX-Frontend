@@ -42,6 +42,7 @@ const reportActivityTypes = new Set([
   "report_created",
   "report_started",
   "report_paused",
+  "report_archived",
   "report_executed",
   "report_sent",
   "report_failed",

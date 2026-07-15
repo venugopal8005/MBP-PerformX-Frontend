@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Archive, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import PageHeader from "../components/ui/PageHeader";
@@ -170,7 +170,7 @@ export default function Clients() {
       );
       setClientPendingDelete(null);
     } catch (err) {
-      setDeleteError(err.response?.data?.message || "Could not delete this client.");
+      setDeleteError(err.response?.data?.message || "Could not archive this client.");
     } finally {
       setIsDeletingClient(false);
     }
@@ -308,13 +308,13 @@ export default function Clients() {
             <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-                  <Trash2 size={20} />
+                  <Archive size={20} />
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Delete client?</h2>
+                  <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Archive client?</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    This removes the client, its reports, saved signals, activity, and Meta connection.
+                    This removes the client and its reports from active use. Historical runs, signals, and activity are retained.
                   </p>
                 </div>
               </div>
@@ -353,8 +353,8 @@ export default function Clients() {
                 disabled={isDeletingClient}
                 className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Trash2 size={16} />
-                {isDeletingClient ? "Deleting..." : "Delete client"}
+                <Archive size={16} />
+                {isDeletingClient ? "Archiving..." : "Archive client"}
               </button>
             </div>
           </div>

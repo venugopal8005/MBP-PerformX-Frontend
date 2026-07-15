@@ -1,4 +1,4 @@
-import { Clock3, Eye, Pencil, Send, Trash2 } from "lucide-react";
+import { Archive, Clock3, Eye, Pencil, Send } from "lucide-react";
 
 import Card from "../ui/Card";
 import FrequencyBadge from "../ui/FrequencyBadge";
@@ -202,9 +202,9 @@ export default function ReportCard({
             }}
             disabled={isDeleting}
             className="rounded-md p-1 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
-            aria-label={`Delete ${title}`}
+            aria-label={`Archive ${title}`}
           >
-            <Trash2 size={16} />
+            <Archive size={16} />
           </button>
         </div>
       </div>

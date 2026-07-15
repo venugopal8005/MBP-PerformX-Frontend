@@ -11,6 +11,7 @@ import { ListSkeleton } from "../components/ui/Skeleton";
 
 import {
   AlertTriangle,
+  Archive,
   Building2,
   Check,
   CheckCircle2,
@@ -20,7 +21,6 @@ import {
   Plus,
   RefreshCw,
   Send,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -652,7 +652,7 @@ export default function Reports() {
       );
       setReportPendingDelete(null);
     } catch (err) {
-      setDeleteError(err.response?.data?.message || "Could not delete this report.");
+      setDeleteError(err.response?.data?.message || "Could not archive this report.");
     } finally {
       setIsDeletingReport(false);
     }
@@ -1377,13 +1377,13 @@ export default function Reports() {
             <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-                  <Trash2 size={20} />
+                  <Archive size={20} />
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Delete report?</h2>
+                  <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Archive report?</h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    This will remove the report from your workspace.
+                    This removes the report from active use. Historical runs, signals, and activity are retained.
                   </p>
                 </div>
               </div>
@@ -1422,8 +1422,8 @@ export default function Reports() {
                 disabled={isDeletingReport}
                 className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Trash2 size={16} />
-                {isDeletingReport ? "Deleting..." : "Delete report"}
+                <Archive size={16} />
+                {isDeletingReport ? "Archiving..." : "Archive report"}
               </button>
             </div>
           </div>

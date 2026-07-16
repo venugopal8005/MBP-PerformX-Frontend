@@ -1,11 +1,12 @@
 import { Archive, ChevronRight, Clock3, Pencil } from "lucide-react";
+import { formatClientSummaryCount } from "../../utils/clientSummary";
 
 export default function ClientCard({
   id,
   name,
   account,
-  reports,
-  campaigns,
+  activeReportCount,
+  monitoredCampaignCount,
   updated,
   status,
   onOpen,
@@ -44,9 +45,13 @@ export default function ClientCard({
       </div>
 
       <div className="flex items-center gap-7">
-        <div className="text-sm text-slate-500 dark:text-slate-400">{reports} reports</div>
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          {formatClientSummaryCount(activeReportCount, "reports")}
+        </div>
 
-        <div className="text-sm text-slate-500 dark:text-slate-400">{campaigns} campaigns</div>
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          {formatClientSummaryCount(monitoredCampaignCount, "campaigns")}
+        </div>
 
         <div className="flex items-center gap-1 text-sm text-slate-400 dark:text-slate-500">
           <Clock3 size={14} />

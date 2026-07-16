@@ -11,26 +11,7 @@ import ClientCard from "../components/clients/ClientCard";
 import CreateClientModal from "../components/clients/CreateClientModal";
 
 import api from "../api/axios";
-
-const mapBackendClient = (client) => ({
-  id: client._id,
-  _id: client._id,
-  name: client.name,
-  account:
-    client.meta_ad_account?.name ||
-    client.account ||
-    client.ad_account_name ||
-    "Meta account not assigned",
-  metaAdAccount: client.meta_ad_account || null,
-  reports: client.reports || 0,
-  campaigns: client.campaigns || 0,
-  updated: client.updatedAt ? "Recently updated" : "Just now",
-  updatedAt: client.updatedAt,
-  createdAt: client.createdAt,
-  status: client.status || "stable",
-  industry: client.industry,
-  notes: client.notes,
-});
+import { filterClientsByStatus, mapBackendClient } from "../utils/clientSummary";
 
 export default function Clients() {
   const navigate = useNavigate();
@@ -48,14 +29,7 @@ export default function Clients() {
   const [deleteError, setDeleteError] = useState("");
 
   const visibleClients = useMemo(() => {
-    const filtered = clientList.filter((client) => {
-      if (activeClientFilter === "Critical") return client.status === "critical";
-      if (activeClientFilter === "Attention needed") {
-        return client.status === "moderate" || client.status === "critical";
-      }
-
-      return true;
-    });
+    const filtered = filterClientsByStatus(clientList, activeClientFilter);
 
     return [...filtered].sort((a, b) => {
       if (sortMode === "name") return a.name.localeCompare(b.name);
@@ -130,7 +104,11 @@ export default function Clients() {
         notes: clientDraft.notes,
         status: clientDraft.status || "stable",
       });
-      const updatedClient = mapBackendClient(res.data.client);
+      const updatedClient = mapBackendClient({
+        ...res.data.client,
+        activeReportCount: editingClient.activeReportCount,
+        monitoredCampaignCount: editingClient.monitoredCampaignCount,
+      });
 
       setClientList((current) =>
         current.map((client) => (client.id === updatedClient.id ? updatedClient : client))

@@ -62,6 +62,20 @@ const SIGNAL_TONE_STYLES = {
       color: "#059669",
     },
   },
+  stable: {
+    label: "Stable",
+    Icon: CheckCircle2,
+    iconName: "CheckCircle2",
+    iconClassName: "border-slate-200 bg-slate-50 text-slate-500",
+    badgeClassName: "border-slate-200 bg-slate-50 text-slate-600",
+    dotClassName: "bg-slate-400",
+    activityTone: "neutral",
+    activityIcon: {
+      background: "#f8fafc",
+      border: "#e2e8f0",
+      color: "#64748b",
+    },
+  },
   neutral: {
     label: "Logged",
     Icon: Clock3,
@@ -233,12 +247,12 @@ const toneFromSeverity = (severity) => {
   if (["moderate", "medium", "warning", "review_today"].includes(severity)) {
     return "warning";
   }
-  if (["data_needed", "insufficient_data", "unknown"].includes(severity)) {
+  if (["data_needed", "insufficient_data"].includes(severity)) {
     return "info";
   }
+  if (severity === "stable") return "stable";
+  if (severity === "low") return "neutral";
 
-  // A low/stable severity is intentionally not treated as success here. Green is
-  // reserved for explicit opportunity or recovery signals, not absence of danger.
   return null;
 };
 
@@ -274,8 +288,8 @@ export const getSignalAppearance = (signal = {}) => {
   const category = readSignalCategory(signal);
   const severity = readSeverity(signal);
 
-  // Mapping order matters: explicit severity/category is trusted first, then the
-  // text fallback catches older records whose stored type is incomplete.
+  // Recognized persisted severity is authoritative. Type and text are fallbacks
+  // for legacy records with no usable severity value.
   const tone =
     toneFromSeverity(severity) ||
     toneFromType(type, category) ||

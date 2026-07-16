@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowRight,
   Ban,
   CalendarClock,
   Clock3,
@@ -10,12 +11,14 @@ import {
 } from "lucide-react";
 
 import api from "../api/axios";
+import ArtifactPreviewPanel from "../components/history/ArtifactPreviewPanel";
 import ReportQuickLookMetrics from "../components/reports/ReportQuickLookMetrics";
 import ConfidenceBadge from "../components/ui/ConfidenceBadge";
 import FrequencyBadge from "../components/ui/FrequencyBadge";
 import { CardSkeleton, ListSkeleton } from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
 import { getManualReportDeliveryOutcome } from "../utils/manualReportDelivery";
+import { reportRunDetailPath } from "../utils/history";
 import { getSignalAppearance } from "../utils/signalAppearance";
 
 const formatDateTime = (value) => {
@@ -73,7 +76,7 @@ const reportClientId = (report) => {
 
 export default function ReportDetail() {
   const { reportId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const previewParam = searchParams.get("preview");
   const [report, setReport] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -83,9 +86,6 @@ export default function ReportDetail() {
   const [isApproving, setIsApproving] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [safetyOverridePrompt, setSafetyOverridePrompt] = useState(null);
-  const [activePreviewTab, setActivePreviewTab] = useState(
-    previewParam === "internal" ? "internal" : "client"
-  );
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -226,27 +226,20 @@ export default function ReportDetail() {
     };
   }, [reportId]);
 
-  useEffect(() => {
-    if (previewParam === "client" || previewParam === "internal") {
-      setActivePreviewTab(previewParam);
-    }
-  }, [previewParam]);
-
   const clientName = report?.client_id?.name || "Client";
   const clientId = reportClientId(report);
   const recipients = report?.internal_recipients?.length
     ? report.internal_recipients
     : report?.recipients || [];
   const latestRun = runs[0] || null;
+  const latestRunId = latestRun?.id || latestRun?._id || "";
+  const activePreviewTab = previewParam === "internal" ? "internal" : "client";
+  const isPreviewOpen = previewParam === "client" || previewParam === "internal";
   const reportMetaAccountName =
     report?.meta_account_name_snapshot || report?.meta_ad_account_id?.name || "";
   const reportMetaAccountId =
     report?.meta_account_external_id_snapshot || report?.meta_ad_account_id?.ad_account_id || "";
   const hasResolvedMetaAccount = Boolean(report?.meta_ad_account_id);
-  const previewReport =
-    activePreviewTab === "internal"
-      ? latestRun?.internal_report
-      : latestRun?.client_report;
   const latestClientReport = latestRun?.client_report;
   const overrideReasons = safetyOverridePrompt?.safety?.reasons || [];
   const canApproveLatest =
@@ -257,6 +250,11 @@ export default function ReportDetail() {
     ["generated", "awaiting_approval", "held_for_review", "failed"].includes(
       latestClientReport?.status
     );
+  const openPreview = (audience) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("preview", audience);
+    setSearchParams(next);
+  };
 
   return (
     <div className="flex h-full min-h-0">
@@ -358,7 +356,7 @@ export default function ReportDetail() {
           />
         )}
 
-        {!isLoading && latestRun?.client_report && latestRun?.internal_report && (
+        {!isLoading && latestRun && (
           <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-[var(--shadow-card)] dark:border-slate-800 dark:bg-slate-900/80">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
               <div>
@@ -366,10 +364,7 @@ export default function ReportDetail() {
                   Latest Generated Reports
                 </h2>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Client status: {latestRun.client_report.status}
-                  {latestRun.client_report.delivery_mode
-                    ? ` - ${latestRun.client_report.delivery_mode.replaceAll("_", " ")}`
-                    : ""}
+                  Client status: {latestRun.client_report?.status || "unavailable"}
                 </p>
               </div>
 
@@ -378,7 +373,7 @@ export default function ReportDetail() {
                   <button
                     key={tab}
                     type="button"
-                    onClick={() => setActivePreviewTab(tab)}
+                    onClick={() => openPreview(tab)}
                     className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                       activePreviewTab === tab
                         ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
@@ -414,7 +409,7 @@ export default function ReportDetail() {
               </div>
             </div>
 
-            {activePreviewTab === "client" && latestRun.client_report.safety?.reasons?.length > 0 && (
+            {activePreviewTab === "client" && latestRun.client_report?.safety?.reasons?.length > 0 && (
               <div className="mx-5 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <p className="font-semibold">Safety notes</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -426,17 +421,21 @@ export default function ReportDetail() {
             )}
 
             <div className="p-5">
-              {previewReport?.html ? (
-                <iframe
-                  title={`${activePreviewTab} report preview`}
-                  srcDoc={previewReport.html}
-                  className="h-[680px] w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800"
-                />
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                  No {activePreviewTab} report preview was saved for this run.
-                </div>
-              )}
+              <ArtifactPreviewPanel
+                key={`${latestRunId}:${activePreviewTab}`}
+                reportRunId={latestRunId}
+                audience={activePreviewTab}
+                enabled={isPreviewOpen}
+                available={
+                  latestRun.artifactAvailability
+                    ? latestRun.artifactAvailability[activePreviewTab] === true
+                    : Boolean(
+                        activePreviewTab === "client"
+                          ? latestRun.client_report
+                          : latestRun.internal_report
+                      )
+                }
+              />
             </div>
           </section>
         )}
@@ -450,15 +449,18 @@ export default function ReportDetail() {
             <ListSkeleton count={3} />
           ) : runs.length ? (
             <div className="space-y-4">
-              {runs.map((run) => (
-                <article
-                  key={run._id}
-                  className={`rounded-2xl border bg-white p-5 shadow-[var(--shadow-card)] dark:bg-slate-900/80 ${
-                    run.status === "insufficient_data"
-                      ? "border-amber-200 dark:border-amber-900/70"
-                      : "border-slate-200 dark:border-slate-800"
-                  }`}
-                >
+              {runs.map((run) => {
+                const runDetailPath = reportRunDetailPath(run);
+
+                return (
+                  <article
+                    key={run.id || run._id}
+                    className={`rounded-2xl border bg-white p-5 shadow-[var(--shadow-card)] dark:bg-slate-900/80 ${
+                      run.status === "insufficient_data"
+                        ? "border-amber-200 dark:border-amber-900/70"
+                        : "border-slate-200 dark:border-slate-800"
+                    }`}
+                  >
                   <div className="flex items-start justify-between gap-4">
                     <p className="text-sm text-slate-500 dark:text-slate-400">{formatDateTime(run.ran_at)}</p>
                     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -526,8 +528,21 @@ export default function ReportDetail() {
                       <p className="mt-1 text-slate-700 dark:text-slate-300">{runNextSignal(run)}</p>
                     </div>
                   </div>
-                </article>
-              ))}
+
+                    {runDetailPath && (
+                      <div className="mt-5 flex justify-end border-t border-slate-200 pt-4 dark:border-slate-800">
+                        <Link
+                          to={runDetailPath}
+                          className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white dark:focus-visible:ring-slate-100 dark:focus-visible:ring-offset-slate-900"
+                        >
+                          View run details
+                          <ArrowRight size={15} aria-hidden="true" />
+                        </Link>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">

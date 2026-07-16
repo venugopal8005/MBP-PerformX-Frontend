@@ -3,6 +3,7 @@ import { Archive, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import PageHeader from "../components/ui/PageHeader";
+import PageTabs from "../components/ui/PageTabs";
 import { ListSkeleton } from "../components/ui/Skeleton";
 
 import ActivityPanel from "../components/activity/ActivityPanel";
@@ -197,14 +198,20 @@ export default function Clients() {
               }
             />
 
+            <PageTabs
+              tabs={["Active", "Archived"]}
+              activeTab="Active"
+              onChange={(tab) => tab === "Archived" && navigate("/clients/archived")}
+            />
+
             {pageError && (
-              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="mb-4 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 {pageError}
               </div>
             )}
 
-            <div className="mb-6 flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800">
-              <div className="flex items-center gap-8">
+            <div className="mb-6 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-1.5 dark:border-slate-800 dark:bg-slate-900/60">
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Client status filters">
                 {["All clients", "Attention needed", "Critical"].map((filter) => {
                   const active = activeClientFilter === filter;
 
@@ -213,10 +220,10 @@ export default function Clients() {
                       key={filter}
                       type="button"
                       onClick={() => setActiveClientFilter(filter)}
-                      className={`border-b-2 pb-3 text-sm font-medium transition-colors ${
+                      className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
                         active
-                          ? "border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-50"
-                          : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                          ? "border border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
+                          : "border border-transparent text-slate-500 hover:bg-white/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/70 dark:hover:text-slate-100"
                       }`}
                     >
                       {filter}
@@ -228,7 +235,7 @@ export default function Clients() {
               <button
                 type="button"
                 onClick={() => setSortMode((current) => (current === "recent" ? "name" : "recent"))}
-                className="pb-3 text-sm font-medium text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                className="rounded-md px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-white/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/70 dark:hover:text-slate-100"
               >
                 Sort: {sortMode === "recent" ? "Recent" : "Name"}
               </button>

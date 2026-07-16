@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import PageHeader from "../components/ui/PageHeader";
+import PageTabs from "../components/ui/PageTabs";
 import ReportCard from "../components/reports/ReportCard";
 import ActivityPanel from "../components/activity/ActivityPanel";
 import CreateClientModal from "../components/clients/CreateClientModal";
@@ -1302,54 +1303,62 @@ export default function Reports() {
               }
             />
 
-            {pageError && (
-              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {pageError}
-              </div>
-            )}
+            <PageTabs
+              tabs={["Active", "Archived"]}
+              activeTab="Active"
+              onChange={(tab) => tab === "Archived" && navigate("/reports/archived")}
+            />
 
-            {pageMessage && (
-              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                {pageMessage}
-              </div>
-            )}
+            <div className="mt-5">
+              {pageError && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {pageError}
+                </div>
+              )}
 
-            {isLoadingReports ? (
-              <ListSkeleton count={4} />
-            ) : reportsList.length ? (
-              <div className="space-y-4">
-                {reportsList.map((report) => (
-                  <ReportCard
-                    key={report.id}
-                    {...report}
-                    onOpen={(reportId) => navigate(`/reports/${reportId}`)}
-                    onPreview={(reportId, previewType) =>
-                      navigate(`/reports/${reportId}?preview=${previewType}`)
-                    }
-                    onApproveLatest={() => approveLatestClientReport(report)}
-                    onEdit={openEditReportFlow}
-                    onDelete={openDeleteReportDialog}
-                    isApprovingLatest={approvingRunId === report.latestRunId}
-                    isEditing={isLoadingEditReport && editingReport?._id === report.id}
-                    isDeleting={isDeletingReport && reportPendingDelete?.id === report.id}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-                <h3 className="text-sm font-semibold text-slate-950 dark:text-slate-50">No reports yet</h3>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  Create a client, connect Meta, select campaigns, and launch your first monitor.
-                </p>
-                <button
-                  onClick={openNewReportFlow}
-                  className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  <Plus size={16} />
-                  New Report
-                </button>
-              </div>
-            )}
+              {pageMessage && (
+                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {pageMessage}
+                </div>
+              )}
+
+              {isLoadingReports ? (
+                <ListSkeleton count={4} />
+              ) : reportsList.length ? (
+                <div className="space-y-4">
+                  {reportsList.map((report) => (
+                    <ReportCard
+                      key={report.id}
+                      {...report}
+                      onOpen={(reportId) => navigate(`/reports/${reportId}`)}
+                      onPreview={(reportId, previewType) =>
+                        navigate(`/reports/${reportId}?preview=${previewType}`)
+                      }
+                      onApproveLatest={() => approveLatestClientReport(report)}
+                      onEdit={openEditReportFlow}
+                      onDelete={openDeleteReportDialog}
+                      isApprovingLatest={approvingRunId === report.latestRunId}
+                      isEditing={isLoadingEditReport && editingReport?._id === report.id}
+                      isDeleting={isDeletingReport && reportPendingDelete?.id === report.id}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+                  <h3 className="text-sm font-semibold text-slate-950 dark:text-slate-50">No reports yet</h3>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Create a client, connect Meta, select campaigns, and launch your first monitor.
+                  </p>
+                  <button
+                    onClick={openNewReportFlow}
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    <Plus size={16} />
+                    New Report
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -5,8 +5,13 @@ import AppLayout from "../layouts/AppLayout";
 
 import Reports from "../pages/Reports";
 import ReportDetail from "../pages/ReportDetail";
+import ArchivedReports from "../pages/ArchivedReports";
+import ReportHistory from "../pages/ReportHistory";
+import ReportRunDetail from "../pages/ReportRunDetail";
 import Clients from "../pages/Clients";
 import ClientDetail from "../pages/ClientDetail";
+import ArchivedClients from "../pages/ArchivedClients";
+import ClientHistory from "../pages/ClientHistory";
 import Activity from "../pages/Activity";
 import Settings from "../pages/Settings";
 import AcceptInvite from "../pages/AcceptInvite";
@@ -26,12 +31,32 @@ export const router = createBrowserRouter([
         element: <Reports />,
       },
       {
+        path: "/reports/archived",
+        element: <ArchivedReports />,
+      },
+      {
+        path: "/reports/:reportId/history",
+        element: <ReportHistory />,
+      },
+      {
+        path: "/report-runs/:reportRunId",
+        element: <ReportRunDetail />,
+      },
+      {
         path: "/reports/:reportId",
         element: <ReportDetail />,
       },
       {
         path: "/clients",
         element: <Clients />,
+      },
+      {
+        path: "/clients/archived",
+        element: <ArchivedClients />,
+      },
+      {
+        path: "/clients/:clientId/history",
+        element: <ClientHistory />,
       },
       {
         path: "/clients/:clientId",

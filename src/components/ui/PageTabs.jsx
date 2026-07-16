@@ -11,6 +11,7 @@ export default function PageTabs({
         return (
           <button
             key={tab}
+            type="button"
             onClick={() => onChange(tab)}
             className={`border-b-2 pb-3 text-sm font-medium transition-colors ${
               active

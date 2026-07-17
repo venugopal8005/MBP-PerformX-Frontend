@@ -1,12 +1,23 @@
-import { ArrowLeft, History, TrendingDown, TrendingUp, Minus } from "lucide-react";
-import { useCallback } from "react";
+import { ArrowLeft, History, LockKeyhole, Minus, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import { Link, useParams } from "react-router-dom";
 
 import { getIssue, getIssueSignals } from "../api/issues";
+import {
+  getIntervention,
+  getInterventionWorkspaceMembers,
+  getIssueClientWriteAccess,
+  getIssueInterventions,
+} from "../api/interventions";
+import InterventionActionModal from "../components/issues/InterventionActionModal";
+import InterventionDetailModal from "../components/issues/InterventionDetailModal";
+import InterventionHistory from "../components/issues/InterventionHistory";
 import IssueSignalHistory from "../components/issues/IssueSignalHistory";
 import StatusBadge from "../components/ui/StatusBadge";
 import { CardSkeleton } from "../components/ui/Skeleton";
 import useCursorHistory from "../hooks/useCursorHistory";
+import useRequestOwnership from "../hooks/useRequestOwnership";
 import useRouteOwnedResource from "../hooks/useRouteOwnedResource";
 import {
   issueDate,
@@ -20,11 +31,18 @@ import {
   issueStatusVariant,
   mapIssue,
 } from "../utils/issues";
+import { interventionError, mapIntervention } from "../utils/interventions";
 
 const trendIcons = {
   escalating: TrendingUp,
   improving: TrendingDown,
   unchanged: Minus,
+};
+
+const abortedRequestError = () => {
+  const error = new Error("Request was aborted.");
+  error.name = "AbortError";
+  return error;
 };
 
 const OverviewItem = ({ label, children }) => (
@@ -36,6 +54,30 @@ const OverviewItem = ({ label, children }) => (
 
 export default function IssueDetail() {
   const { issueId } = useParams();
+  const currentUser = useSelector((state) => state.user?.user);
+  const currentUserId = currentUser?.id || currentUser?._id || null;
+  const [access, setAccess] = useState({
+    clientId: null,
+    isLoading: false,
+    canWrite: false,
+    isArchived: false,
+    members: [],
+    error: "",
+  });
+  const [actionModal, setActionModal] = useState(null);
+  const [selectedInterventionId, setSelectedInterventionId] = useState(null);
+  const [highlightedInterventionId, setHighlightedInterventionId] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const issueOwnerRef = useRef(issueId);
+  const {
+    begin: beginAccessRequest,
+    finish: finishAccessRequest,
+  } = useRequestOwnership();
+  const {
+    begin: beginAuthorityRequest,
+    finish: finishAuthorityRequest,
+    invalidate: invalidateAuthorityRequests,
+  } = useRequestOwnership();
   const loadIssue = useCallback(
     async ({ signal }) => {
       try {
@@ -51,6 +93,7 @@ export default function IssueDetail() {
     ownerKey: issueId,
     loadResource: loadIssue,
     fallbackError: "Could not load this Issue.",
+    preserveDataOnReload: true,
   });
   const loadSignals = useCallback(
     async ({ cursor, signal }) => {
@@ -69,9 +112,150 @@ export default function IssueDetail() {
     resetKey: `issue-signals:${issueId}`,
     enabled: Boolean(issueState.data),
   });
+  const loadInterventions = useCallback(
+    async ({ cursor, signal }) => {
+      try {
+        return await getIssueInterventions(issueId, { cursor, signal });
+      } catch (error) {
+        throw new Error(
+          interventionError(error, "Could not load recorded actions.").message,
+          { cause: error }
+        );
+      }
+    },
+    [issueId]
+  );
+  const interventions = useCursorHistory({
+    loadPage: loadInterventions,
+    resetKey: `issue-interventions:${issueId}`,
+    enabled: Boolean(issueState.data),
+  });
   const issue = issueState.data;
   const TrendIcon = trendIcons[issue?.trend] || Minus;
   const isNotFound = issueState.error === "Issue not found.";
+
+  useEffect(() => {
+    issueOwnerRef.current = issueId;
+    invalidateAuthorityRequests();
+  }, [invalidateAuthorityRequests, issueId]);
+
+  useEffect(() => {
+    if (!issue?.clientId) return undefined;
+    const request = beginAccessRequest();
+    const requestIssueId = issueId;
+    Promise.allSettled([
+      getIssueClientWriteAccess(issue.clientId, { signal: request.signal }),
+      getInterventionWorkspaceMembers({ signal: request.signal }),
+    ]).then(([clientResult, membersResult]) => {
+      if (!request.isCurrent() || issueOwnerRef.current !== requestIssueId) return;
+      if (clientResult.status === "rejected") {
+        setAccess({
+          clientId: issue.clientId,
+          isLoading: false,
+          canWrite: false,
+          isArchived: false,
+          members: [],
+          error: interventionError(clientResult.reason, "Action recording is unavailable.").message,
+        });
+        return;
+      }
+      setAccess({
+        clientId: issue.clientId,
+        isLoading: false,
+        ...clientResult.value,
+        members: membersResult.status === "fulfilled" ? membersResult.value : [],
+        error: "",
+      });
+    }).finally(() => {
+      finishAccessRequest(request);
+    });
+    return () => request.controller.abort();
+  }, [beginAccessRequest, finishAccessRequest, issue?.clientId, issueId]);
+
+  const accessPending = access.clientId !== issue?.clientId || access.isLoading;
+  const canRecord =
+    access.clientId === issue?.clientId &&
+    access.canWrite &&
+    !access.isArchived &&
+    Number.isInteger(issue?.lifecycleRevision);
+
+  const handleMutationSuccess = (value, { operation, idempotentReplay } = {}) => {
+    const mutationIssueId = issueId;
+    if (issueOwnerRef.current !== mutationIssueId) return;
+    const saved = mapIntervention(value);
+    setHighlightedInterventionId({ issueId, id: saved.id });
+    setNotice({
+      issueId,
+      message: idempotentReplay
+        ? "The existing action record was recovered safely."
+        : operation === "cancel"
+          ? "Action record cancelled."
+          : operation === "correct"
+            ? "Correction recorded. The original remains in history."
+            : "Action recorded.",
+    });
+    setActionModal(null);
+    interventions.revalidate({
+      failureMessage: "The action was saved, but the history could not be refreshed.",
+    });
+    issueState.reload();
+  };
+
+  const refreshRevision = async ({ correction, interventionId, signal }) => {
+    const request = beginAuthorityRequest();
+    const requestIssueId = issueId;
+    const abortFromCaller = () => request.controller.abort();
+    if (signal?.aborted) abortFromCaller();
+    else signal?.addEventListener?.("abort", abortFromCaller, { once: true });
+    const isCurrentOwner = () =>
+      request.isCurrent() &&
+      !signal?.aborted &&
+      issueOwnerRef.current === requestIssueId;
+
+    try {
+      if (correction && interventionId) {
+        const [response, accessResponse] = await Promise.all([
+          getIntervention(interventionId, { signal: request.signal }),
+          issue?.clientId
+            ? getIssueClientWriteAccess(issue.clientId, { signal: request.signal })
+            : Promise.resolve({ canWrite: false, isArchived: false }),
+        ]);
+        if (!isCurrentOwner()) throw abortedRequestError();
+        return {
+          intervention: response.intervention,
+          canWrite: accessResponse.canWrite === true && !accessResponse.isArchived,
+        };
+      }
+
+      const [issueResponse, accessResponse] = await Promise.all([
+        getIssue(requestIssueId, { signal: request.signal }),
+        issue?.clientId
+          ? getIssueClientWriteAccess(issue.clientId, { signal: request.signal })
+          : Promise.resolve(null),
+      ]);
+      if (!isCurrentOwner()) throw abortedRequestError();
+      const refreshed = mapIssue(issueResponse.issue);
+      if (accessResponse && issue?.clientId) {
+        setAccess((current) => ({
+          ...current,
+          clientId: issue.clientId,
+          ...accessResponse,
+          error: "",
+        }));
+      }
+      if (!isCurrentOwner()) throw abortedRequestError();
+      issueState.reload();
+      return { issue: refreshed, canWrite: accessResponse?.canWrite !== false };
+    } finally {
+      signal?.removeEventListener?.("abort", abortFromCaller);
+      finishAuthorityRequest(request);
+    }
+  };
+
+  const openCorrection = (intervention) => {
+    setSelectedInterventionId(null);
+    setActionModal({ issueId, mode: "correct", intervention });
+  };
 
   return (
     <div className="h-full overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
@@ -127,9 +311,45 @@ export default function IssueDetail() {
                     <TrendIcon size={13} aria-hidden="true" />
                     {issueLabel(issue?.trend, "Unknown trend")}
                   </span>
+                  {canRecord && (
+                    <button
+                      type="button"
+                      onClick={() => setActionModal({ issueId, mode: "create" })}
+                      className="ml-1 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white outline-none hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white dark:focus-visible:ring-offset-slate-900"
+                    >
+                      <Plus size={15} aria-hidden="true" /> Record action
+                    </button>
+                  )}
                 </div>
               </div>
             </header>
+
+            {notice?.issueId === issueId && (
+              <div role="status" className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                <span>{notice.message}</span>
+                <button type="button" onClick={() => setNotice(null)} className="font-semibold underline">Dismiss</button>
+              </div>
+            )}
+
+            {issueState.refreshError && (
+              <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                <span>Issue details could not be refreshed. Existing details are still shown.</span>
+                <button type="button" onClick={issueState.reload} disabled={issueState.isRefreshing} className="font-semibold underline disabled:opacity-50">
+                  {issueState.isRefreshing ? "Retrying..." : "Retry Issue refresh"}
+                </button>
+              </div>
+            )}
+
+            {(access.isArchived || access.error || (!accessPending && issue?.clientId && !canRecord)) && (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                <LockKeyhole size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>
+                  {access.isArchived
+                    ? "This Client is archived. Recorded action history remains available, but new actions, corrections, and cancellations are read-only."
+                    : access.error || "Recorded action history is available, but action controls are read-only."}
+                </p>
+              </div>
+            )}
 
             <section className="mt-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
               <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">Overview</h2>
@@ -197,7 +417,32 @@ export default function IssueDetail() {
               </div>
             </section>
 
-            <section className="mt-6 pb-10">
+            <section className="mt-6">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">Intervention history</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Human actions recorded after this Issue, newest first.
+                  </p>
+                </div>
+                {canRecord && (
+                  <button type="button" onClick={() => setActionModal({ issueId, mode: "create" })} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                    <Plus size={15} aria-hidden="true" /> Record action
+                  </button>
+                )}
+              </div>
+              <InterventionHistory
+                state={interventions}
+                highlightedId={
+                  highlightedInterventionId?.issueId === issueId
+                    ? highlightedInterventionId.id
+                    : null
+                }
+                onOpen={(id) => setSelectedInterventionId({ issueId, id })}
+              />
+            </section>
+
+            <section className="mt-8 pb-10">
               <div className="mb-4">
                 <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">Occurrence history</h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -206,6 +451,37 @@ export default function IssueDetail() {
               </div>
               <IssueSignalHistory state={occurrences} />
             </section>
+
+            {actionModal?.issueId === issueId && (
+              <InterventionActionModal
+                key={`${issueId}:${actionModal.mode}:${actionModal.intervention?.id || "new"}`}
+                issue={issue}
+                intervention={actionModal.intervention}
+                members={access.members}
+                currentUserId={currentUserId}
+                mode={actionModal.mode}
+                onClose={() => setActionModal(null)}
+                onStale={refreshRevision}
+                onSuccess={(value, meta) =>
+                  handleMutationSuccess(value, {
+                    ...meta,
+                    operation: actionModal.mode === "correct" ? "correct" : "create",
+                  })
+                }
+              />
+            )}
+
+            {selectedInterventionId?.issueId === issueId && (
+              <InterventionDetailModal
+                key={`${issueId}:${selectedInterventionId.id}`}
+                interventionId={selectedInterventionId.id}
+                canWrite={canRecord}
+                onClose={() => setSelectedInterventionId(null)}
+                onCorrect={openCorrection}
+                onOpenRelated={(id) => setSelectedInterventionId({ issueId, id })}
+                onMutation={handleMutationSuccess}
+              />
+            )}
           </>
         )}
       </div>

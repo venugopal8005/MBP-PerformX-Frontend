@@ -29,15 +29,26 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
     enabledRef.current = enabled;
   }, [enabled]);
 
-  const execute = useCallback(async ({ append, generation, requestOwnerKey }) => {
+  const execute = useCallback(async ({
+    append,
+    preserveItems = false,
+    failureMessage,
+    generation,
+    requestOwnerKey,
+  }) => {
     if (!enabledRef.current || activeRequestRef.current) return;
     if (append && !hasMoreRef.current) return;
 
     const controller = new AbortController();
     const request = { controller, generation };
     activeRequestRef.current = request;
-    dispatch({ type: "request_started", ownerKey: requestOwnerKey, append });
-    if (!append) {
+    dispatch({
+      type: "request_started",
+      ownerKey: requestOwnerKey,
+      append,
+      preserveItems,
+    });
+    if (!append && !preserveItems) {
       cursorRef.current = null;
       hasMoreRef.current = false;
     }
@@ -72,7 +83,10 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
       dispatch({
         type: "request_failed",
         ownerKey: requestOwnerKey,
+        append,
+        preserveItems,
         error:
+          failureMessage ||
           requestError?.response?.data?.message ||
           requestError?.message ||
           "Could not load historical records.",
@@ -135,7 +149,35 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
     });
   }, [execute]);
 
+  const revalidate = useCallback(({ failureMessage } = {}) => {
+    generationRef.current += 1;
+    activeRequestRef.current?.controller.abort();
+    activeRequestRef.current = null;
+    execute({
+      append: false,
+      preserveItems: true,
+      failureMessage,
+      generation: generationRef.current,
+      requestOwnerKey: ownerKeyRef.current,
+    });
+  }, [execute]);
+
   const visibleState = visibleCursorHistoryState(state, normalizedResetKey, { enabled });
+  const retry = useCallback(() => {
+    execute({
+      append: visibleState.failedAppend && visibleState.items.length > 0,
+      preserveItems: visibleState.failedRefresh,
+      failureMessage: visibleState.failedRefresh ? visibleState.error : undefined,
+      generation: generationRef.current,
+      requestOwnerKey: ownerKeyRef.current,
+    });
+  }, [
+    execute,
+    visibleState.error,
+    visibleState.failedAppend,
+    visibleState.failedRefresh,
+    visibleState.items.length,
+  ]);
 
   return {
     ...visibleState,
@@ -143,5 +185,7 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
       !visibleState.isLoading && !visibleState.error && visibleState.items.length === 0,
     loadMore,
     reload,
+    revalidate,
+    retry,
   };
 }

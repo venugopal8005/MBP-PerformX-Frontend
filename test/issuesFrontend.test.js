@@ -351,11 +351,15 @@ test("Issue frontend performs no persistent storage, Meta, artifact, or email re
   assert.doesNotMatch(combined, /\/meta|\/artifacts|manual-send|webhook|emailHtml|email_html/);
 });
 
-test("minimal Issue frontend contains no Review Queue or intervention controls", async () => {
+test("Issue frontend adds bounded intervention controls without a Review Queue or outcome controls", async () => {
   const issueFiles = await Promise.all([
     source("../src/components/issues/IssueListSection.jsx"),
     source("../src/components/issues/IssueSignalHistory.jsx"),
+    source("../src/components/issues/InterventionHistory.jsx"),
     source("../src/pages/IssueDetail.jsx"),
   ]);
-  assert.doesNotMatch(issueFiles.join("\n"), /Review Queue|intervention|evaluation|resolve Issue/i);
+  const combined = issueFiles.join("\n");
+  assert.match(combined, /Intervention history/);
+  assert.match(combined, /Record action/);
+  assert.doesNotMatch(combined, /Review Queue|outcome evaluation|resolve Issue/i);
 });

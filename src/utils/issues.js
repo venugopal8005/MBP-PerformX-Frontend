@@ -61,6 +61,7 @@ const evidence = (value) => ({
 
 export const mapIssue = (value = {}) => ({
   id: text(value.id),
+  clientId: text(value.clientId),
   status: text(value.status),
   severity: text(value.severity),
   previousSeverity: text(value.previousSeverity),
@@ -76,6 +77,11 @@ export const mapIssue = (value = {}) => ({
   resolvedAt: text(value.resolvedAt),
   reopenCount: count(value.reopenCount),
   reopenedAt: text(value.reopenedAt),
+  lifecycleRevision: count(value.lifecycleRevision),
+  latestInterventionId: text(value.latestInterventionId),
+  interventionCount: count(value.interventionCount) ?? 0,
+  lastInterventionAt: text(value.lastInterventionAt),
+  interventionRevision: count(value.interventionRevision) ?? 0,
   hasPredecessor: Boolean(text(value.predecessorIssueId)),
   identity: {
     client: identityValue(value.identity?.client),

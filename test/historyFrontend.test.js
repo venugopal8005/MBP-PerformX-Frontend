@@ -149,6 +149,41 @@ test("route-owned Client, Report, and ReportRun data cannot cross route identiti
   }
 });
 
+test("route-owned refresh preservation is opt-in and never crosses owners", () => {
+  const loadedA = routeOwnedReducer(createRouteOwnedState("issue-a"), {
+    type: "request_succeeded",
+    ownerKey: "issue-a",
+    data: { id: "issue-a", title: "Retained Issue A" },
+  });
+  const refreshingA = routeOwnedReducer(loadedA, {
+    type: "request_started",
+    ownerKey: "issue-a",
+    preserveData: true,
+  });
+  assert.equal(refreshingA.data.title, "Retained Issue A");
+  assert.equal(refreshingA.isLoading, false);
+  assert.equal(refreshingA.isRefreshing, true);
+
+  const failedRefreshA = routeOwnedReducer(refreshingA, {
+    type: "request_failed",
+    ownerKey: "issue-a",
+    preserveData: true,
+    error: "Refresh unavailable",
+  });
+  assert.equal(failedRefreshA.data.title, "Retained Issue A");
+  assert.equal(failedRefreshA.error, "");
+  assert.equal(failedRefreshA.refreshError, "Refresh unavailable");
+
+  const loadingB = routeOwnedReducer(failedRefreshA, {
+    type: "request_started",
+    ownerKey: "issue-b",
+    preserveData: true,
+  });
+  assert.equal(loadingB.data, null);
+  assert.equal(loadingB.ownerKey, "issue-b");
+  assert.equal(loadingB.isLoading, true);
+});
+
 test("delivery evidence maps only fields returned by the ReportRun serializer", () => {
   const evidence = mapDeliveryEvidence({
     client: {

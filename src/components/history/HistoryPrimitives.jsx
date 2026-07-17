@@ -31,9 +31,10 @@ export function HistoryCollectionState({
   state,
   emptyTitle = "No historical records",
   emptyDescription = "No retained records are available for this section.",
+  preserveItemsOnError = false,
   children,
 }) {
-  if (state.isLoading) {
+  if (state.isLoading && state.items.length === 0) {
     return (
       <div role="status" aria-live="polite">
         <span className="sr-only">Loading historical records.</span>
@@ -44,7 +45,13 @@ export function HistoryCollectionState({
     );
   }
 
-  if (state.error) {
+  const retainedPaginationError =
+    preserveItemsOnError &&
+    state.error &&
+    state.items.length > 0 &&
+    (state.failedAppend || state.failedRefresh);
+
+  if (state.error && !retainedPaginationError) {
     return (
       <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
         <div className="flex items-start gap-2">
@@ -72,7 +79,21 @@ export function HistoryCollectionState({
   return (
     <>
       {children}
-      <div className="mt-4 flex justify-center">
+      {retainedPaginationError ? (
+        <div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>{state.error}</span>
+            <button type="button" onClick={state.retry || state.loadMore} disabled={state.isLoadingMore} className="font-semibold underline disabled:opacity-50">
+              {state.isLoadingMore || state.isRefreshing
+                ? "Retrying..."
+                : state.failedRefresh
+                  ? "Retry refresh"
+                  : "Retry load more"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 flex justify-center">
         {state.hasMore ? (
           <button
             type="button"
@@ -85,7 +106,13 @@ export function HistoryCollectionState({
         ) : (
           <span className="text-xs text-slate-400 dark:text-slate-500">End of history</span>
         )}
-      </div>
+        </div>
+      )}
+      {state.isRefreshing && (
+        <p role="status" className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          Refreshing recorded actions...
+        </p>
+      )}
     </>
   );
 }

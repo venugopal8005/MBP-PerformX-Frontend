@@ -8,6 +8,7 @@ import ReportDetail from "../pages/ReportDetail";
 import ArchivedReports from "../pages/ArchivedReports";
 import ReportHistory from "../pages/ReportHistory";
 import ReportRunDetail from "../pages/ReportRunDetail";
+import IssueDetail from "../pages/IssueDetail";
 import Clients from "../pages/Clients";
 import ClientDetail from "../pages/ClientDetail";
 import ArchivedClients from "../pages/ArchivedClients";
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
       {
         path: "/report-runs/:reportRunId",
         element: <ReportRunDetail />,
+      },
+      {
+        path: "/issues/:issueId",
+        element: <IssueDetail />,
       },
       {
         path: "/reports/:reportId",

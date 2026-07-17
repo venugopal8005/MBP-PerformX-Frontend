@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 
 import {
   createRouteOwnedState,
@@ -8,6 +8,7 @@ import {
 
 export default function useRouteOwnedResource({ ownerKey, loadResource, fallbackError }) {
   const normalizedOwnerKey = String(ownerKey ?? "");
+  const [requestVersion, setRequestVersion] = useState(0);
   const [state, dispatch] = useReducer(
     routeOwnedReducer,
     normalizedOwnerKey,
@@ -33,7 +34,12 @@ export default function useRouteOwnedResource({ ownerKey, loadResource, fallback
       });
 
     return () => controller.abort();
-  }, [fallbackError, loadResource, normalizedOwnerKey]);
+  }, [fallbackError, loadResource, normalizedOwnerKey, requestVersion]);
 
-  return visibleRouteOwnedState(state, normalizedOwnerKey);
+  const reload = useCallback(() => setRequestVersion((version) => version + 1), []);
+
+  return {
+    ...visibleRouteOwnedState(state, normalizedOwnerKey),
+    reload,
+  };
 }

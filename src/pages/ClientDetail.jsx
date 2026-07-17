@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import api from "../api/axios";
+import IssueListSection from "../components/issues/IssueListSection";
 import FrequencyBadge from "../components/ui/FrequencyBadge";
 import { ListSkeleton } from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
@@ -342,6 +343,8 @@ export default function ClientDetail() {
                 </div>
               )}
             </section>
+
+            <IssueListSection clientId={clientId} className="mt-6" />
 
             <section className="mt-6 pb-10">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">

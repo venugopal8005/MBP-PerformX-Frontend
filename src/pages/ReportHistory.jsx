@@ -9,6 +9,7 @@ import {
   getReportRuns,
 } from "../api/history";
 import IdentityProvenance from "../components/history/IdentityProvenance";
+import IssueListSection from "../components/issues/IssueListSection";
 import {
   HistoricalActivityList,
   HistoricalRunList,
@@ -147,6 +148,11 @@ export default function ReportHistory() {
               <HistoricalRunList runs={runs.items} />
             </HistoryCollectionState>
           </HistorySection>
+          <IssueListSection
+            reportId={reportId}
+            archivedContext
+            className="border-t border-slate-200 py-6 dark:border-slate-800"
+          />
           <HistorySection title="Signals" description="Retained decisions and performance warnings." count={report?.signalCount}>
             <HistoryCollectionState state={signals} emptyTitle="No historical signals">
               <HistoricalSignalList signals={signals.items} />

@@ -12,6 +12,7 @@ import {
 
 import api from "../api/axios";
 import ArtifactPreviewPanel from "../components/history/ArtifactPreviewPanel";
+import IssueListSection from "../components/issues/IssueListSection";
 import ReportQuickLookMetrics from "../components/reports/ReportQuickLookMetrics";
 import ConfidenceBadge from "../components/ui/ConfidenceBadge";
 import FrequencyBadge from "../components/ui/FrequencyBadge";
@@ -439,6 +440,8 @@ export default function ReportDetail() {
             </div>
           </section>
         )}
+
+        <IssueListSection reportId={reportId} className="mt-6" />
 
         <section className="mt-6">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">

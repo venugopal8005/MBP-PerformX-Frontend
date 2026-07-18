@@ -496,6 +496,17 @@ export const mapIntervention = (value = {}) => ({
   id: displayText(value.id, 128),
   issueId: displayText(value.issueId, 128),
   actionType: displayText(value.actionType, 64),
+  evaluationIntent: value.evaluationIntent && typeof value.evaluationIntent === "object" ? {
+    mode: displayText(value.evaluationIntent.mode, 32),
+    primaryMetric: displayText(value.evaluationIntent.primaryMetric, 64),
+    watchedMetrics: Array.isArray(value.evaluationIntent.watchedMetrics)
+      ? value.evaluationIntent.watchedMetrics.map((metric) => displayText(metric, 64)).filter(Boolean).slice(0, 6)
+      : [],
+    resolutionSource: displayText(value.evaluationIntent.resolutionSource, 64),
+    ruleVersion: Number.isSafeInteger(value.evaluationIntent.ruleVersion) && value.evaluationIntent.ruleVersion >= 1
+      ? value.evaluationIntent.ruleVersion
+      : null,
+  } : null,
   actionPayload: value.actionPayload && typeof value.actionPayload === "object" ? value.actionPayload : {},
   reason: displayText(value.reason, 1000),
   note: displayText(value.note, 2000),

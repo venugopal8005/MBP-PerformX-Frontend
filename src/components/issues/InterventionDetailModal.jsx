@@ -20,6 +20,7 @@ import {
 import { issueDate, issueLabel } from "../../utils/issues";
 import StatusBadge from "../ui/StatusBadge";
 import { CardSkeleton } from "../ui/Skeleton";
+import EvaluationSection from "./EvaluationSection";
 
 function DetailRow({ label, children }) {
   if (!children) return null;
@@ -164,15 +165,18 @@ export default function InterventionDetailModal({
   const [cancelNeedsReview, setCancelNeedsReview] = useState(false);
   const [cancelRevision, setCancelRevision] = useState(null);
   const [cancelAuthorityState, setCancelAuthorityState] = useState("idle");
+  const [evaluationPending, setEvaluationPending] = useState(false);
   const [cancelController] = useState(() =>
     createInterventionIntentController("cancel")
   );
   const requests = useRequestOwnership();
 
+  const modalPending = cancelPending || evaluationPending;
+
   useModalFocusTrap({
     containerRef: dialogRef,
     initialFocusRef: closeButton,
-    pending: cancelPending,
+    pending: modalPending,
     onClose,
   });
 
@@ -200,6 +204,7 @@ export default function InterventionDetailModal({
   }, [canWrite, interventionId, requestVersion]);
 
   const reload = () => {
+    setEvaluationPending(false);
     setLoading(true);
     setLoadError("");
     setRequestVersion((value) => value + 1);
@@ -315,7 +320,7 @@ export default function InterventionDetailModal({
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 px-3 py-5 backdrop-blur-sm"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !cancelPending) onClose();
+        if (event.target === event.currentTarget && !modalPending) onClose();
       }}
     >
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex max-h-[calc(100vh-2.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
@@ -324,7 +329,7 @@ export default function InterventionDetailModal({
             <p className="text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">Recorded human action</p>
             <h2 id={titleId} className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Action details</h2>
           </div>
-          <button ref={closeButton} type="button" onClick={onClose} disabled={cancelPending} aria-label="Close action details" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+          <button ref={closeButton} type="button" onClick={onClose} disabled={modalPending} aria-label="Close action details" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-slate-200">
             <X size={18} aria-hidden="true" />
           </button>
         </header>
@@ -347,6 +352,15 @@ export default function InterventionDetailModal({
                   onOpenRelated?.(relatedId);
                 }}
               />
+
+              {detail.evaluationIntent && (
+                <EvaluationSection
+                  interventionId={detail.id}
+                  interventionRevision={detail.revision}
+                  onInterventionReload={reload}
+                  onPendingChange={setEvaluationPending}
+                />
+              )}
 
               {cancelMode && (
                 <section className="rounded-xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900 dark:bg-rose-950/20">
@@ -390,16 +404,16 @@ export default function InterventionDetailModal({
             {!canWrite && <p className="text-xs text-slate-500 dark:text-slate-400">Read-only action history</p>}
             <div className="ml-auto flex flex-wrap gap-2">
               {canCorrect && (
-                <button type="button" onClick={() => onCorrect(detail)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                <button type="button" onClick={() => onCorrect(detail)} disabled={modalPending} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
                   <PencilLine size={15} aria-hidden="true" /> Correct
                 </button>
               )}
               {canCancel && (
-                <button type="button" onClick={beginCancellation} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30">
+                <button type="button" onClick={beginCancellation} disabled={modalPending} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30">
                   <Ban size={15} aria-hidden="true" /> Cancel record
                 </button>
               )}
-              <button type="button" onClick={onClose} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-950">Done</button>
+              <button type="button" onClick={onClose} disabled={modalPending} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950">Done</button>
             </div>
           </footer>
         )}

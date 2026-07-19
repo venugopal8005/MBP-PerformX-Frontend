@@ -2,6 +2,7 @@ import {
   BarChart3,
   Users,
   Activity,
+  ListChecks,
   Settings,
   LogOut,
   X,
@@ -12,6 +13,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { signout } from "../../Features/Auth/UserSlice";
+import ReviewSummaryBadge from "../reviews/ReviewSummaryBadge";
+import useReviewSummary from "../../hooks/useReviewSummary";
 
 const links = [
   {
@@ -23,6 +26,11 @@ const links = [
     label: "Clients",
     icon: Users,
     path: "/clients",
+  },
+  {
+    label: "Review",
+    icon: ListChecks,
+    path: "/reviews",
   },
   {
     label: "Activity",
@@ -49,6 +57,7 @@ export default function Sidebar() {
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const { status, user } = useSelector((state) => state.user);
   const isLoggingOut = status === "loading";
+  const reviewSummary = useReviewSummary();
   const agencyName = user?.agency?.name || "Agency workspace";
   const agencyLogo = user?.agency?.logo_url || user?.agency?.logoUrl;
   const agencyInitials = agencyName
@@ -105,7 +114,7 @@ export default function Sidebar() {
                 to={link.path}
                 className={({ isActive }) =>
                   `
-                  flex  gap-3 rounded-xl border px-3 py-2 text-[15px] font-medium transition-colors
+                  flex items-center gap-3 rounded-xl border px-3 py-2 text-[15px] font-medium transition-colors
                   ${
                     isActive
                       ? "border-slate-200 bg-white text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
@@ -115,7 +124,8 @@ export default function Sidebar() {
                 }
               >
                 <Icon size={20} />
-                {link.label}
+                <span>{link.label}</span>
+                {link.path === "/reviews" && <ReviewSummaryBadge summary={reviewSummary.summary} />}
               </NavLink>
             );
           })}

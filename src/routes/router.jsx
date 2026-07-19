@@ -13,6 +13,8 @@ import Clients from "../pages/Clients";
 import ClientDetail from "../pages/ClientDetail";
 import ArchivedClients from "../pages/ArchivedClients";
 import ClientHistory from "../pages/ClientHistory";
+import Reviews from "../pages/Reviews";
+import ReviewDetail from "../pages/ReviewDetail";
 import Activity from "../pages/Activity";
 import Settings from "../pages/Settings";
 import AcceptInvite from "../pages/AcceptInvite";
@@ -66,6 +68,14 @@ export const router = createBrowserRouter([
       {
         path: "/clients/:clientId",
         element: <ClientDetail />,
+      },
+      {
+        path: "/reviews",
+        element: <Reviews />,
+      },
+      {
+        path: "/reviews/:reviewItemId",
+        element: <ReviewDetail />,
       },
       {
         path: "/activity",

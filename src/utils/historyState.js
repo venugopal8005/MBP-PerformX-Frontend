@@ -13,6 +13,7 @@ export const createCursorHistoryState = (key, { enabled = true } = {}) => ({
   isRefreshing: false,
   failedAppend: false,
   failedRefresh: false,
+  invalidCursor: false,
 });
 
 export const cursorHistoryReducer = (state, action) => {
@@ -31,6 +32,7 @@ export const cursorHistoryReducer = (state, action) => {
           isLoadingMore: true,
           failedAppend: false,
           failedRefresh: false,
+          invalidCursor: false,
         }
       : action.preserveItems
         ? {
@@ -39,6 +41,7 @@ export const cursorHistoryReducer = (state, action) => {
             isRefreshing: true,
             failedAppend: false,
             failedRefresh: false,
+            invalidCursor: false,
           }
       : {
           ...createCursorHistoryState(actionOwnerKey),
@@ -57,6 +60,7 @@ export const cursorHistoryReducer = (state, action) => {
       isRefreshing: false,
       failedAppend: false,
       failedRefresh: false,
+      invalidCursor: false,
     };
   }
   if (action.type === "request_failed") {
@@ -68,6 +72,8 @@ export const cursorHistoryReducer = (state, action) => {
       isRefreshing: false,
       failedAppend: action.append === true,
       failedRefresh: action.preserveItems === true,
+      invalidCursor: action.invalidCursor === true,
+      ...(action.invalidCursor === true ? { hasMore: false, nextCursor: null } : {}),
     };
   }
   if (action.type === "request_finished") {

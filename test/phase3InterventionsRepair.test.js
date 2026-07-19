@@ -385,7 +385,7 @@ test("field errors expose stable aria-invalid and aria-describedby contracts", (
 
 test("deterministic intent controllers preserve keys through retries and isolate operations", () => {
   const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, "crypto");
-  const values = ["record-one", "record-two", "correction-one", "cancel-one"];
+  const values = ["record-one", "correction-one", "cancel-one"];
   Object.defineProperty(globalThis, "crypto", {
     configurable: true,
     value: { randomUUID: () => values.shift() },
@@ -400,7 +400,8 @@ test("deterministic intent controllers preserve keys through retries and isolate
     assert.equal(transactionKey, networkKey);
     assert.equal(creation.fail().key, networkKey);
     assert.equal(creation.snapshot().key, networkKey);
-    assert.equal(creation.complete().key, "record:record-two");
+    assert.deepEqual(creation.complete(), { key: null, pending: false, completed: true });
+    assert.equal(creation.begin(), null);
 
     const correction = createInterventionIntentController("correction");
     const cancellation = createInterventionIntentController("cancel");

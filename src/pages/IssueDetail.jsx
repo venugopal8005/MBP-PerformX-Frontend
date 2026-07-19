@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import { Link, useParams } from "react-router-dom";
 
 import { getIssue, getIssueSignals } from "../api/issues";
+import { getIssueTimeline } from "../api/reviews";
 import {
   getIntervention,
   getInterventionWorkspaceMembers,
@@ -14,6 +15,7 @@ import InterventionActionModal from "../components/issues/InterventionActionModa
 import InterventionDetailModal from "../components/issues/InterventionDetailModal";
 import InterventionHistory from "../components/issues/InterventionHistory";
 import IssueSignalHistory from "../components/issues/IssueSignalHistory";
+import IssueTimeline from "../components/reviews/IssueTimeline";
 import StatusBadge from "../components/ui/StatusBadge";
 import { CardSkeleton } from "../components/ui/Skeleton";
 import useCursorHistory from "../hooks/useCursorHistory";
@@ -32,6 +34,7 @@ import {
   mapIssue,
 } from "../utils/issues";
 import { interventionError, mapIntervention } from "../utils/interventions";
+import { normalizeTimelinePage, reviewError } from "../utils/reviews";
 
 const trendIcons = {
   escalating: TrendingUp,
@@ -128,6 +131,25 @@ export default function IssueDetail() {
   const interventions = useCursorHistory({
     loadPage: loadInterventions,
     resetKey: `issue-interventions:${issueId}`,
+    enabled: Boolean(issueState.data),
+  });
+  const loadTimeline = useCallback(
+    async ({ cursor, signal }) => {
+      try {
+        return normalizeTimelinePage(
+          await getIssueTimeline(issueId, { cursor, limit: 20, signal })
+        );
+      } catch (error) {
+        throw new Error(reviewError(error, "Could not load the Issue timeline.").message, {
+          cause: error,
+        });
+      }
+    },
+    [issueId]
+  );
+  const timeline = useCursorHistory({
+    loadPage: loadTimeline,
+    resetKey: `issue-timeline:${issueId}`,
     enabled: Boolean(issueState.data),
   });
   const issue = issueState.data;
@@ -440,6 +462,18 @@ export default function IssueDetail() {
                 }
                 onOpen={(id) => setSelectedInterventionId({ issueId, id })}
               />
+            </section>
+
+            <section className="mt-8 pb-10">
+              <div className="mb-4">
+                <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">Unified timeline</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Persisted Signals, recorded actions, Evaluations, Review events, and archive events.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/80 sm:p-6">
+                <IssueTimeline state={timeline} />
+              </div>
             </section>
 
             <section className="mt-8 pb-10">

@@ -15,6 +15,7 @@ import IssueListSection from "../components/issues/IssueListSection";
 import FrequencyBadge from "../components/ui/FrequencyBadge";
 import { ListSkeleton } from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
+import ClientReviewSummary from "../components/reviews/ClientReviewSummary";
 import { getSignalAppearance } from "../utils/signalAppearance";
 
 const formatDateTime = (value) => {
@@ -345,6 +346,8 @@ export default function ClientDetail() {
             </section>
 
             <IssueListSection clientId={clientId} className="mt-6" />
+
+            <ClientReviewSummary clientId={clientId} />
 
             <section className="mt-6 pb-10">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">

@@ -162,6 +162,14 @@ export default function InterventionActionModal({
   onClose,
   onSuccess,
   onStale,
+  actionOptions = INTERVENTION_ACTIONS,
+  initialRevision = null,
+  createPayloadBuilder = null,
+  createRequest = null,
+  createTitle = "Record action",
+  createDescription = "Record what a person did after this Issue was detected.",
+  errorMapper = interventionError,
+  authorityLabel = "Issue",
 }) {
   const correction = mode === "correct";
   const titleId = useId();
@@ -179,7 +187,7 @@ export default function InterventionActionModal({
   );
   const [pending, setPending] = useState(false);
   const [currentRevision, setCurrentRevision] = useState(
-    correction ? intervention?.revision : issue?.lifecycleRevision
+    correction ? intervention?.revision : (initialRevision ?? issue?.lifecycleRevision)
   );
   const [staleNeedsReview, setStaleNeedsReview] = useState(false);
   const [mutationAllowed, setMutationAllowed] = useState(true);
@@ -290,8 +298,8 @@ export default function InterventionActionModal({
     setRequestState({
       ...controlled,
       message: complete
-        ? "Latest Issue data loaded. Review it before submitting again."
-        : "The latest Issue authority could not be verified. Retry the refresh.",
+        ? `Latest ${authorityLabel} data loaded. Review it before submitting again.`
+        : `The latest ${authorityLabel} authority could not be verified. Retry the refresh.`,
     });
     return complete;
   };
@@ -333,7 +341,7 @@ export default function InterventionActionModal({
         stale: true,
         message: correction
           ? "This action record changed. Refresh and review before resubmitting."
-          : "The Issue changed. Refresh and review before resubmitting.",
+          : `The ${authorityLabel} changed. Refresh and review before resubmitting.`,
       }
     );
   };
@@ -354,16 +362,23 @@ export default function InterventionActionModal({
       });
       const response = correction
         ? await correctIntervention(intervention.id, payload, { signal: request.signal })
-        : await createIntervention(issue.id, payload, { signal: request.signal });
+        : createRequest
+          ? await createRequest(
+              createPayloadBuilder
+                ? createPayloadBuilder({ form, idempotencyKey: intentKey, expectedRevision: currentRevision, payload })
+                : payload,
+              { signal: request.signal }
+            )
+          : await createIntervention(issue.id, payload, { signal: request.signal });
       if (!request.isCurrent()) return;
       intentController.complete();
-      onSuccess(response.intervention, { idempotentReplay: response.idempotentReplay === true });
+      onSuccess(response.intervention, { idempotentReplay: response.idempotentReplay === true, response });
     } catch (error) {
       if (!request.isCurrent() || requestWasAborted(error)) return;
       intentController.fail();
-      const controlled = interventionError(error);
+      const controlled = errorMapper(error);
       setRequestState(controlled);
-      if (controlled.stale) {
+      if (controlled.stale || controlled.sourceStale) {
         setStep("edit");
         setStaleNeedsReview(true);
         setMutationAllowed(false);
@@ -408,12 +423,12 @@ export default function InterventionActionModal({
               {step === "review" ? "Review submission" : correction ? "Create replacement record" : "Human action record"}
             </p>
             <h2 id={titleId} className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">
-              {correction ? "Correct recorded action" : "Record action"}
+              {correction ? "Correct recorded action" : createTitle}
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {correction
                 ? "The original remains in history and will be marked superseded."
-                : "Record what a person did after this Issue was detected."}
+                : createDescription}
             </p>
           </div>
           <button type="button" onClick={onClose} disabled={pending} aria-label="Close action form" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-slate-200">
@@ -457,7 +472,7 @@ export default function InterventionActionModal({
               <label className={labelClass}>
                 Action type
                 <select ref={firstControl} {...fieldA11y("actionType")} value={form.actionType} onChange={(event) => update("actionType", event.target.value)} className={inputClass}>
-                  {INTERVENTION_ACTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {actionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{definition?.description}</p>
                 <FieldError id={fieldA11y("actionType")["aria-describedby"]}>{errors.actionType}</FieldError>

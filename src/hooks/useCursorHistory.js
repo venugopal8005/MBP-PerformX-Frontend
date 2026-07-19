@@ -6,6 +6,15 @@ import {
   visibleCursorHistoryState,
 } from "../utils/historyState";
 
+const INVALID_CURSOR_CODES = new Set(["INVALID_REVIEW_CURSOR", "INVALID_TIMELINE_CURSOR"]);
+
+const requestErrorCode = (error) =>
+  error?.response?.data?.code ||
+  error?.code ||
+  error?.cause?.response?.data?.code ||
+  error?.cause?.code ||
+  null;
+
 export default function useCursorHistory({ loadPage, resetKey, enabled = true }) {
   const normalizedResetKey = String(resetKey ?? "");
   const [state, dispatch] = useReducer(
@@ -80,11 +89,17 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
         generation !== generationRef.current ||
         requestOwnerKey !== ownerKeyRef.current
       ) return;
+      const invalidCursor = INVALID_CURSOR_CODES.has(requestErrorCode(requestError));
+      if (invalidCursor) {
+        cursorRef.current = null;
+        hasMoreRef.current = false;
+      }
       dispatch({
         type: "request_failed",
         ownerKey: requestOwnerKey,
         append,
         preserveItems,
+        invalidCursor,
         error:
           failureMessage ||
           requestError?.response?.data?.message ||
@@ -164,9 +179,12 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
 
   const visibleState = visibleCursorHistoryState(state, normalizedResetKey, { enabled });
   const retry = useCallback(() => {
+    const restartAfterInvalidCursor = visibleState.invalidCursor === true;
     execute({
-      append: visibleState.failedAppend && visibleState.items.length > 0,
-      preserveItems: visibleState.failedRefresh,
+      append: !restartAfterInvalidCursor && visibleState.failedAppend && visibleState.items.length > 0,
+      preserveItems: restartAfterInvalidCursor
+        ? visibleState.items.length > 0
+        : visibleState.failedRefresh,
       failureMessage: visibleState.failedRefresh ? visibleState.error : undefined,
       generation: generationRef.current,
       requestOwnerKey: ownerKeyRef.current,
@@ -176,6 +194,7 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
     visibleState.error,
     visibleState.failedAppend,
     visibleState.failedRefresh,
+    visibleState.invalidCursor,
     visibleState.items.length,
   ]);
 

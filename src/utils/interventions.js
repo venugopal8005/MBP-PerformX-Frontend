@@ -201,26 +201,29 @@ export const createInterventionIntentKey = (prefix = "intervention") => {
 export const createInterventionIntentController = (prefix = "intervention") => {
   let key = createInterventionIntentKey(prefix);
   let pending = false;
+  let completed = false;
   return {
-    snapshot: () => ({ key, pending }),
+    snapshot: () => ({ key, pending, completed }),
     begin: () => {
-      if (pending) return null;
+      if (pending || completed || !key) return null;
       pending = true;
       return key;
     },
     fail: () => {
       pending = false;
-      return { key, pending };
+      return { key, pending, completed };
     },
     complete: () => {
-      key = createInterventionIntentKey(prefix);
+      key = null;
       pending = false;
-      return { key, pending };
+      completed = true;
+      return { key, pending, completed };
     },
     reset: () => {
       key = createInterventionIntentKey(prefix);
       pending = false;
-      return { key, pending };
+      completed = false;
+      return { key, pending, completed };
     },
   };
 };

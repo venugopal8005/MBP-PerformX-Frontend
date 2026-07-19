@@ -51,7 +51,9 @@ export const focusModalEntry = ({ container, initialFocus }) => {
   return target || null;
 };
 
-export const restoreModalFocus = (element) => element?.focus?.();
+export const restoreModalFocus = (element) => {
+  if (element && (!("isConnected" in element) || element.isConnected)) element.focus?.();
+};
 
 export default function useModalFocusTrap({
   containerRef,

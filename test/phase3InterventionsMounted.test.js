@@ -427,9 +427,9 @@ test("mounted duplicate cancellation and unmount produce one request and no call
   assert.equal(mutations, 0);
 });
 
-test("mounted creation preserves its idempotency key through retry and rotates it for a new intent", async () => {
+test("mounted creation preserves its idempotency key through retry and creates a key only for a new intent", async () => {
   const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, "crypto");
-  const uuids = ["intent-one", "after-one", "intent-two", "after-two"];
+  const uuids = ["intent-one", "intent-two"];
   Object.defineProperty(globalThis, "crypto", {
     configurable: true,
     value: { randomUUID: () => uuids.shift() },

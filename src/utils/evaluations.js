@@ -40,6 +40,7 @@ export const EVALUATION_METRICS = Object.freeze([
   "impressions",
   "spend",
 ]);
+export const EVALUATION_CONFIDENCE_LEVELS = Object.freeze(["high", "medium", "low", "unavailable"]);
 
 const observedResultValues = new Set(TOP_LEVEL_OBSERVED_RESULTS);
 const metricClassificationValues = new Set(METRIC_CLASSIFICATIONS);
@@ -56,6 +57,7 @@ const intentModes = new Set(["auto_resolved", "explicit", "observational", "not_
 const metricSet = new Set(EVALUATION_METRICS);
 const statusSet = new Set(EVALUATION_STATUSES);
 const effectiveStatusSet = new Set(EVALUATION_EFFECTIVE_STATUSES);
+const confidenceLevelSet = new Set(EVALUATION_CONFIDENCE_LEVELS);
 
 export class EvaluationContractError extends Error {
   constructor(message = "Evaluation data is unavailable.") {
@@ -203,6 +205,29 @@ export const normalizeEvaluationMetricResult = (value) => {
   };
 };
 
+const normalizeThresholdPair = (value) => {
+  contract(record(value));
+  return { relative: finite(value.relative, { nullable: false }), absolute: finite(value.absolute, { nullable: false }) };
+};
+
+export const normalizeEvaluationThresholdSnapshot = (value) => {
+  contract(record(value) && record(value.minimumEvidence) && record(value.noiseBoundary));
+  const minimumEvidence = Object.fromEntries(["spend", "impressions", "clicks", "conversions"].map((field) => [field, finite(value.minimumEvidence[field])]));
+  contract(typeof value.noiseBoundary.requiresBoth === "boolean");
+  contract(typeof value.requiresAttribution === "boolean" && typeof value.requiresConversionValue === "boolean");
+  return {
+    metric: enumValue(value.metric, metricSet),
+    directionality: enumValue(value.directionality, directionalityValues),
+    unit: enumValue(value.unit, unitValues),
+    materialImprovement: normalizeThresholdPair(value.materialImprovement),
+    materialWorsening: normalizeThresholdPair(value.materialWorsening),
+    noiseBoundary: { ...normalizeThresholdPair(value.noiseBoundary), requiresBoth: value.noiseBoundary.requiresBoth },
+    minimumEvidence,
+    requiresAttribution: value.requiresAttribution,
+    requiresConversionValue: value.requiresConversionValue,
+  };
+};
+
 export const normalizeEvaluationListItem = (value) => {
   contract(record(value));
   const status = enumValue(value.status, statusSet);
@@ -226,6 +251,10 @@ export const normalizeEvaluationListItem = (value) => {
     absoluteDelta: finite(value.absoluteDelta),
     relativeDelta: finite(value.relativeDelta),
     observedResult: enumValue(value.observedResult, observedResultValues, { nullable: true }),
+    confidenceLevel: enumValue(value.confidenceLevel, confidenceLevelSet),
+    confidenceScore: finite(value.confidenceScore),
+    confidenceFactors: reasonCodes(value.confidenceFactors),
+    confidenceVersion: value.confidenceVersion == null ? null : integer(value.confidenceVersion, 1),
     interpretability: enumValue(value.interpretability, interpretabilityValues),
     reasonCodes: reasonCodes(value.reasonCodes),
     calculatedAt: isoDate(value.calculatedAt),
@@ -236,6 +265,7 @@ export const normalizeEvaluationDetail = (value) => {
   const base = normalizeEvaluationListItem(value);
   contract(Array.isArray(value.metricResults) && value.metricResults.length <= 6);
   contract(Array.isArray(value.overlapInterventionIds) && value.overlapInterventionIds.length <= 25);
+  contract(Array.isArray(value.thresholdSnapshots) && value.thresholdSnapshots.length <= 6);
   contract(record(value.intent));
   contract(typeof value.canRefresh === "boolean");
   const baseline = normalizeEvaluationEvidence(value.baseline);
@@ -264,6 +294,7 @@ export const normalizeEvaluationDetail = (value) => {
     baseline,
     followUp,
     metricResults: value.metricResults.map(normalizeEvaluationMetricResult),
+    thresholdSnapshots: value.thresholdSnapshots.map(normalizeEvaluationThresholdSnapshot),
     overlapInterventionIds: value.overlapInterventionIds.map((item) => id(item)),
     evidenceCompleteness: enumValue(value.evidenceCompleteness, evidenceCompletenessValues),
     summary: text(value.summary, 500),
@@ -314,6 +345,33 @@ export const evaluationInterpretabilityLabel = (value) => ({
   observational: "Observational comparison",
   not_interpretable: "Not interpretable",
 }[value] || "Unavailable");
+
+export const evaluationConfidenceLabel = (value) => ({
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence",
+  unavailable: "Confidence unavailable",
+}[value] || "Confidence unavailable");
+
+const confidenceFactorLabels = Object.freeze({
+  overlapping_intervention: "Another action overlaps this evaluation window.",
+  insufficient_spend: "Spend volume is close to or below the evidence minimum.",
+  insufficient_conversions: "Conversion volume is close to or below the evidence minimum.",
+  insufficient_volume: "Observed volume is close to or below the evidence minimum.",
+  short_observation_window: "The observation window is short.",
+  missing_baseline_report_run: "A comparable baseline run is unavailable.",
+  missing_follow_up_report_run: "A comparable follow-up run is unavailable.",
+  unstable_metric_direction: "Watched metrics moved in different directions.",
+  attribution_incompatible: "Attribution windows are not comparable.",
+  incomplete_baseline_evidence: "Baseline evidence is incomplete.",
+  incomplete_follow_up_evidence: "Follow-up evidence is incomplete.",
+  data_quality_failure: "Persisted evidence did not meet data-quality requirements.",
+  limited_observation_density: "The comparison contains limited persisted observations.",
+  evaluation_invalidated: "The recorded action was corrected or cancelled.",
+  legacy_confidence_unavailable: "This historical evaluation predates confidence scoring.",
+});
+
+export const evaluationConfidenceFactorLabel = (factor) => confidenceFactorLabels[factor] || "Additional confidence context is unavailable.";
 
 const reasonLabels = Object.freeze({
   awaiting_follow_up: "The follow-up window has not produced persisted evidence yet.",

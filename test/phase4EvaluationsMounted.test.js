@@ -85,6 +85,10 @@ const evaluationList = (overrides = {}) => ({
   absoluteDelta: 0.5,
   relativeDelta: 0.25,
   observedResult: "improved",
+  confidenceLevel: "medium",
+  confidenceScore: 65,
+  confidenceFactors: ["short_observation_window"],
+  confidenceVersion: 1,
   interpretability: "directional",
   reasonCodes: [],
   calculatedAt: "2026-07-18T10:00:00.000Z",
@@ -109,6 +113,7 @@ const evaluationDetail = (overrides = {}) => ({
     { metric: "ctr", directionality: "higher_is_better", unit: "percent", baselineValue: 2, followUpValue: 2.5, absoluteDelta: 0.5, relativeDelta: 0.25, minimumEvidenceMet: true, material: true, classification: "improved", reasonCodes: [] },
     { metric: "spend", directionality: "context_only", unit: "currency", baselineValue: 120, followUpValue: 125, absoluteDelta: 5, relativeDelta: 0.0417, minimumEvidenceMet: true, material: false, classification: "context_only", reasonCodes: [] },
   ],
+  thresholdSnapshots: [],
   overlapInterventionIds: [],
   evidenceCompleteness: "complete",
   summary: "CTR increased across the bounded persisted windows. This is an observed association.",
@@ -236,6 +241,8 @@ test("[display] ready Evaluation renders metrics, signed movement, windows, curr
   assert.ok(view.getByText(/Stored ReportRun evidence only/));
   assert.ok(view.getAllByText(/\$120\.00/).length >= 1);
   assert.ok(view.getByText("Supporting context"));
+  assert.ok(view.getAllByText("Medium confidence").length >= 1);
+  assert.ok(view.getByText("The observation window is short."));
   assert.equal(view.queryByText("Classification unavailable"), null);
 });
 

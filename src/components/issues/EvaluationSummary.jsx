@@ -2,6 +2,7 @@ import { ArrowRight, Clock3 } from "lucide-react";
 
 import {
   evaluationMetricLabel,
+  evaluationConfidenceLabel,
   evaluationResultLabel,
   evaluationStatusLabel,
   formatEvaluationMetric,
@@ -22,6 +23,9 @@ export default function EvaluationSummary({ intervention, evaluation, onOpen }) 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Persisted evaluation</span>
             <StatusBadge variant={awaiting ? "low" : "medium"}>{evaluationStatusLabel(status)}</StatusBadge>
+            <StatusBadge variant={evaluation.confidenceLevel === "unavailable" ? "low" : evaluation.confidenceLevel}>
+              {evaluationConfidenceLabel(evaluation.confidenceLevel)}
+            </StatusBadge>
             <span className="text-xs text-slate-400 dark:text-slate-500">Version {evaluation.sequence}</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700 dark:text-slate-300">

@@ -6,6 +6,8 @@ import useEvaluationHistory from "../../hooks/useEvaluationHistory";
 import useRequestOwnership from "../../hooks/useRequestOwnership";
 import {
   createEvaluationRefreshKey,
+  evaluationConfidenceFactorLabel,
+  evaluationConfidenceLabel,
   evaluationInterpretabilityLabel,
   evaluationMetricClassificationLabel,
   evaluationMetricLabel,
@@ -83,6 +85,9 @@ export function EvaluationDetailEvidence({ evaluation }) {
               {evaluationStatusLabel(evaluation.effectiveStatus)}
             </StatusBadge>
             {evaluation.observedResult && <StatusBadge variant="low">{evaluationResultLabel(evaluation.observedResult)}</StatusBadge>}
+            <StatusBadge variant={evaluation.confidenceLevel === "unavailable" ? "low" : evaluation.confidenceLevel}>
+              {evaluationConfidenceLabel(evaluation.confidenceLevel)}
+            </StatusBadge>
           </div>
           <p className="mt-3 break-words text-sm leading-6 text-slate-700 dark:text-slate-300">{evaluation.summary}</p>
         </div>
@@ -106,10 +111,24 @@ export function EvaluationDetailEvidence({ evaluation }) {
         <EvidenceValue label="Observed movement">{evaluationResultLabel(evaluation.observedResult)}</EvidenceValue>
         <EvidenceValue label="Interpretability">{evaluationInterpretabilityLabel(evaluation.interpretability)}</EvidenceValue>
         <EvidenceValue label="Evidence completeness">{evaluation.evidenceCompleteness.replaceAll("_", " ")}</EvidenceValue>
+        <EvidenceValue label="Confidence">{evaluationConfidenceLabel(evaluation.confidenceLevel)}{evaluation.confidenceScore == null ? "" : ` (${evaluation.confidenceScore}/100)`}</EvidenceValue>
         <EvidenceValue label="Absolute change">{formatEvaluationAbsoluteDelta(primaryResult, currency)}</EvidenceValue>
         <EvidenceValue label="Relative change">{formatEvaluationRelativeDelta(primaryResult?.relativeDelta)}</EvidenceValue>
         <EvidenceValue label="Trigger">{evaluation.triggerType.replaceAll("_", " ")}</EvidenceValue>
       </dl>
+
+      {evaluation.confidenceFactors.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Confidence context</h4>
+          <ul className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+            {evaluation.confidenceFactors.map((factor) => (
+              <li key={factor} className="rounded-md bg-slate-50 px-3 py-2 dark:bg-slate-950/60">
+                {evaluationConfidenceFactorLabel(factor)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div>
         <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Persisted evidence windows</h4>

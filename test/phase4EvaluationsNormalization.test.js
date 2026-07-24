@@ -46,6 +46,10 @@ const listItem = (overrides = {}) => ({
   absoluteDelta: 0.5,
   relativeDelta: 0.25,
   observedResult: "improved",
+  confidenceLevel: "medium",
+  confidenceScore: 65,
+  confidenceFactors: ["short_observation_window", "limited_observation_density"],
+  confidenceVersion: 1,
   interpretability: "directional",
   reasonCodes: [],
   calculatedAt: "2026-07-18T10:00:00.000Z",
@@ -86,6 +90,17 @@ const detail = (overrides = {}) => ({
   baseline: snapshot(),
   followUp: snapshot({ ctr: 2.5 }, { start: "2026-07-18", end: "2026-07-18", timezone: "UTC", cadence: "daily" }),
   metricResults: [{ metric: "ctr", directionality: "higher_is_better", unit: "percent", baselineValue: 2, followUpValue: 2.5, absoluteDelta: 0.5, relativeDelta: 0.25, minimumEvidenceMet: true, material: true, classification: "improved", reasonCodes: [] }],
+  thresholdSnapshots: [{
+    metric: "ctr",
+    directionality: "higher_is_better",
+    unit: "percent",
+    materialImprovement: { relative: 0.1, absolute: 0.2 },
+    materialWorsening: { relative: 0.1, absolute: 0.2 },
+    noiseBoundary: { relative: 0.1, absolute: 0.2, requiresBoth: true },
+    minimumEvidence: { spend: null, impressions: 100, clicks: null, conversions: null },
+    requiresAttribution: false,
+    requiresConversionValue: false,
+  }],
   overlapInterventionIds: [],
   evidenceCompleteness: "complete",
   summary: "CTR increased across the bounded persisted windows.",
@@ -156,6 +171,8 @@ test("[contract] detail normalization validates windows, metric results, revisio
   assert.equal(normalized.baseline.values.ctr, 2);
   assert.equal(normalized.followUp.window.timezone, "UTC");
   assert.equal(normalized.metricResults[0].absoluteDelta, 0.5);
+  assert.equal(normalized.confidenceLevel, "medium");
+  assert.equal(normalized.thresholdSnapshots[0].noiseBoundary.relative, 0.1);
   assert.equal(normalized.canRefresh, true);
   assert.throws(() => normalizeEvaluationDetail(detail({ canRefresh: "yes" })), EvaluationContractError);
   assert.throws(() => normalizeEvaluationDetail(detail({ ruleVersion: -1 })), EvaluationContractError);

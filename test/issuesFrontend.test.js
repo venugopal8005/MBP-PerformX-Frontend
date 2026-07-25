@@ -11,9 +11,11 @@ import {
   issueDetailPath,
   issueEvidenceSummary,
   issueIdentityLabel,
+  issueLifecycleMessages,
   issueRequestError,
   issueScopeLabel,
   issueSeverityVariant,
+  issueStablePeriodLabel,
   issueStatusVariant,
   mapIssue,
   mapIssueSignal,
@@ -56,17 +58,22 @@ const renderSignalHistory = async (value) => {
   const { default: IssueSignalHistory } = await vite.ssrLoadModule(
     "/src/components/issues/IssueSignalHistory.jsx"
   );
+  const items = Array.isArray(value) ? value : [value];
   return renderToStaticMarkup(
-    createElement(IssueSignalHistory, {
-      state: {
-        items: [value],
-        isLoading: false,
-        isLoadingMore: false,
-        isEmpty: false,
-        error: "",
-        hasMore: false,
-      },
-    })
+    createElement(
+      MemoryRouter,
+      { initialEntries: ["/issues/issue-1"] },
+      createElement(IssueSignalHistory, {
+        state: {
+          items,
+          isLoading: false,
+          isLoadingMore: false,
+          isEmpty: items.length === 0,
+          error: "",
+          hasMore: false,
+        },
+      })
+    )
   );
 };
 
@@ -167,17 +174,73 @@ test("Issue identity and evidence use controlled contract fallbacks", () => {
   assert.equal(issueEvidenceSummary(issue), "Evidence unavailable");
 });
 
-test("Issue detail mapping retains recurrence without exposing predecessor ID", () => {
+test("Issue detail mapping retains authoritative recurrence and lifecycle context", () => {
   const issue = mapIssue({
     ...serializedIssue,
     reopenCount: 2,
-    predecessorIssueId: "do-not-display-this-id",
+    predecessorIssueId: "111111111111111111111111",
+    monitoringStartedAt: "2026-07-15T10:00:00.000Z",
+    monitoringInterventionId: "222222222222222222222222",
+    worseningStreak: 1,
+    latestEvaluationStatus: "awaiting_follow_up",
     scope: { entity: { level: "campaign" }, comparison: { cadence: "daily" } },
   });
   assert.equal(issue.reopenCount, 2);
   assert.equal(issue.hasPredecessor, true);
+  assert.equal(issue.predecessorIssueId, "111111111111111111111111");
+  assert.equal(issue.monitoringInterventionId, "222222222222222222222222");
+  assert.equal(issue.worseningStreak, 1);
+  assert.equal(issue.latestEvaluationStatus, "awaiting_follow_up");
   assert.equal(issue.scope.entityLevel, "campaign");
-  assert.equal("predecessorIssueId" in issue, false);
+});
+
+test("Issue lifecycle copy does not reopen after one noisy observation", () => {
+  const messages = issueLifecycleMessages(mapIssue({
+    ...serializedIssue,
+    status: "monitoring",
+    monitoringStartedAt: "2026-07-15T10:00:00.000Z",
+    worseningStreak: 1,
+    reopenedAt: null,
+    latestEvaluationStatus: "awaiting_follow_up",
+  }));
+  assert.ok(messages.some((message) => message.title === "Action recorded"));
+  assert.ok(messages.some((message) => message.title === "Issue is monitoring"));
+  assert.ok(messages.some((message) => message.title === "One concerning observation"));
+  assert.equal(messages.some((message) => /reopened/i.test(message.title)), false);
+});
+
+test("Issue lifecycle copy exposes persisted repeated-worsening reopening", () => {
+  const messages = issueLifecycleMessages(mapIssue({
+    ...serializedIssue,
+    status: "open",
+    worseningStreak: 2,
+    worseningMetric: "ctr",
+    reopenedAt: "2026-07-17T10:00:00.000Z",
+  }));
+  assert.ok(messages.some((message) => message.title === "Repeated worsening reopened the Issue"));
+});
+
+test("Issue lifecycle copy distinguishes an immediate critical reopen from repeated worsening", () => {
+  const messages = issueLifecycleMessages(mapIssue({
+    ...serializedIssue,
+    status: "open",
+    worseningStreak: 1,
+    worseningMetric: "roas",
+    reopenedAt: "2026-07-17T10:00:00.000Z",
+  }));
+  assert.ok(messages.some((message) => message.title === "Strong critical evidence reopened the Issue"));
+  assert.equal(messages.some((message) => message.title === "Repeated worsening reopened the Issue"), false);
+});
+
+test("stable period is calculated only from predecessor resolution to recurrence opening", () => {
+  assert.equal(
+    issueStablePeriodLabel(
+      { resolvedAt: "2026-07-10T08:00:00.000Z" },
+      { openedAt: "2026-07-12T10:00:00.000Z" }
+    ),
+    "2 days, 2 hours"
+  );
+  assert.equal(issueStablePeriodLabel({}, {}), "Stable period unavailable");
 });
 
 test("Issue list recurrence indicator renders only for a positive persisted reopen count", async () => {
@@ -195,7 +258,7 @@ test("Issue route navigation uses only the serialized Issue ID", () => {
   assert.equal(issueDetailPath({ reportId: "wrong-report" }), null);
 });
 
-test("linked Signal mapping contains only safe occurrence presentation fields", () => {
+test("linked Signal mapping retains safe ReportRun navigation and scope fields", () => {
   const signal = mapIssueSignal({
     id: "signal-1",
     issueId: "issue-1",
@@ -210,8 +273,20 @@ test("linked Signal mapping contains only safe occurrence presentation fields", 
   assert.equal(signal.occurrenceNumber, 3);
   assert.equal(signal.severity, "critical");
   assert.equal("reportId" in signal, false);
-  assert.equal("reportRunId" in signal, false);
+  assert.equal(signal.reportRunId, "run-1");
   assert.equal("issueId" in signal, false);
+});
+
+test("multiple Signals from one ReportRun remain distinct and visibly grouped", async () => {
+  const reportRunId = "333333333333333333333333";
+  const markup = await renderSignalHistory([
+    { id: "signal-ctr", reportRunId, title: "CTR declined", severity: "critical" },
+    { id: "signal-cpa", reportRunId, title: "CPA increased", severity: "moderate" },
+  ]);
+  assert.match(markup, /CTR declined/);
+  assert.match(markup, /CPA increased/);
+  assert.equal((markup.match(/2 Signals from this ReportRun in the loaded history/g) || []).length, 2);
+  assert.match(markup, /href="\/report-runs\/333333333333333333333333"/);
 });
 
 test("Signal occurrence number renders only when the backend supplies a positive number", async () => {

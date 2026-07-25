@@ -449,3 +449,75 @@ test("mounted IssueDetail keeps the latest authority when Issue A and Issue B re
   await waitFor(() => assert.equal(posts.length, 3));
   assert.equal(posts[2].body.expectedIssueRevision, 9);
 });
+
+test("mounted IssueDetail loads one scoped predecessor summary and links to its paginated history", async () => {
+  api.get = async (url) => {
+    if (url === "/issues/issue-a") {
+      return { data: { issue: issueValue("issue-a", {
+        predecessorIssueId: "issue-previous",
+        openedAt: "2026-07-12T10:00:00.000Z",
+      }) } };
+    }
+    if (url === "/issues/issue-previous") {
+      return { data: { issue: issueValue("issue-previous", {
+        title: "Earlier CTR Issue",
+        status: "resolved",
+        openedAt: "2026-07-01T08:00:00.000Z",
+        resolvedAt: "2026-07-10T08:00:00.000Z",
+        interventionCount: 2,
+        latestEvaluationResult: "improved",
+        latestEvaluationConfidence: "medium",
+      }) } };
+    }
+    if (url === "/issues/issue-a/interventions") return interventionPage([]);
+    return commonGet(url);
+  };
+
+  const view = renderIssueDetail();
+  assert.ok(await view.findByText("New recurrence after an earlier Issue"));
+  assert.ok(await view.findByText("Earlier CTR Issue"));
+  assert.ok(view.getByText("2 days, 2 hours stable"));
+  assert.ok(view.getByText("Improved movement observed"));
+  assert.ok(view.getByText("Medium confidence"));
+  assert.equal(view.getByRole("link", { name: /View predecessor history/ }).getAttribute("href"), "/issues/issue-previous");
+});
+
+test("mounted IssueDetail handles an unavailable predecessor without leaking the backend response", async () => {
+  api.get = async (url) => {
+    if (url === "/issues/issue-a") {
+      return { data: { issue: issueValue("issue-a", { predecessorIssueId: "foreign-or-missing" }) } };
+    }
+    if (url === "/issues/foreign-or-missing") {
+      throw { response: { status: 403, data: { message: "foreign agency secret", stack: "private" } } };
+    }
+    if (url === "/issues/issue-a/interventions") return interventionPage([]);
+    return commonGet(url);
+  };
+
+  const view = renderIssueDetail();
+  assert.ok(await view.findByText("Earlier occurrence details are unavailable in this workspace."));
+  assert.equal(view.queryByText(/foreign agency secret|private/), null);
+  assert.equal(view.queryByRole("link", { name: /View predecessor history/ }), null);
+});
+
+test("mounted IssueDetail renders monitoring and noise-resistant reopening states from persisted fields", async () => {
+  api.get = async (url) => {
+    if (url === "/issues/issue-a") {
+      return { data: { issue: issueValue("issue-a", {
+        status: "monitoring",
+        monitoringStartedAt: "2026-07-17T09:20:00.000Z",
+        monitoringInterventionId: "intervention-1",
+        latestEvaluationStatus: "awaiting_follow_up",
+        worseningStreak: 1,
+      }) } };
+    }
+    if (url === "/issues/issue-a/interventions") return interventionPage([interventionValue()]);
+    return commonGet(url);
+  };
+
+  const view = renderIssueDetail();
+  assert.ok(await view.findByText("Action recorded"));
+  assert.ok(view.getByText("Issue is monitoring"));
+  assert.ok(view.getByText("One concerning observation"));
+  assert.equal(view.queryByText("Repeated worsening reopened the Issue"), null);
+});

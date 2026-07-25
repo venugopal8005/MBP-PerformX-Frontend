@@ -358,6 +358,7 @@ export default function InterventionDetailModal({
                   interventionId={detail.id}
                   interventionRevision={detail.revision}
                   onInterventionReload={reload}
+                  onOpenIntervention={onOpenRelated}
                   onPendingChange={setEvaluationPending}
                 />
               )}

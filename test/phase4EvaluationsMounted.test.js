@@ -7,6 +7,7 @@ import { createServer } from "vite";
 let vite;
 let api;
 let EvaluationSection;
+let EvaluationDetailEvidence;
 let InterventionDetailModal;
 let InterventionHistory;
 let render;
@@ -163,7 +164,7 @@ before(async () => {
   ({ render, cleanup, fireEvent, waitFor, act } = await import("@testing-library/react"));
   vite = await createServer({ root: new URL("..", import.meta.url).pathname, appType: "custom", logLevel: "silent", server: { middlewareMode: true } });
   ({ default: api } = await vite.ssrLoadModule("/src/api/axios.js"));
-  ({ default: EvaluationSection } = await vite.ssrLoadModule("/src/components/issues/EvaluationSection.jsx"));
+  ({ default: EvaluationSection, EvaluationDetailEvidence } = await vite.ssrLoadModule("/src/components/issues/EvaluationSection.jsx"));
   ({ default: InterventionDetailModal } = await vite.ssrLoadModule("/src/components/issues/InterventionDetailModal.jsx"));
   ({ default: InterventionHistory } = await vite.ssrLoadModule("/src/components/issues/InterventionHistory.jsx"));
   originalGet = api.get;
@@ -318,6 +319,72 @@ test("[display] overlap, zero baseline, reason fallback, and invalidation remain
   assert.ok(view.getByText(/baseline is zero/));
   assert.ok(view.getByText("Additional persisted evidence context is unavailable."));
   assert.ok(view.getByText("Historical invalidation"));
+});
+
+test("[display] low-confidence improvement remains explicitly directional rather than definitive", async () => {
+  const item = evaluationList({ confidenceLevel: "low", confidenceScore: 32, observedResult: "improved" });
+  api.get = routeGet({
+    list: [item],
+    details: new Map([[ids.evaluation, evaluationDetail({ confidenceLevel: "low", confidenceScore: 32, observedResult: "improved" })]]),
+  });
+  const view = render(createElement(EvaluationSection, { interventionId: ids.intervention, interventionRevision: 3 }));
+  assert.ok((await view.findAllByText("Improved movement observed")).length >= 1);
+  assert.ok(view.getAllByText(/Low confidence/).length >= 1);
+  assert.ok(view.getByText(/directional evidence, not a definitive outcome/));
+});
+
+test("[display] attribution authority and insufficient-data reasons remain visible", async () => {
+  const item = evaluationList({
+    status: "insufficient_data",
+    effectiveStatus: "insufficient_data",
+    observedResult: null,
+    confidenceLevel: "unavailable",
+    confidenceScore: null,
+    confidenceFactors: ["legacy_confidence_unavailable"],
+    reasonCodes: ["attribution_not_comparable", "minimum_volume_not_met"],
+  });
+  const detail = evaluationDetail({
+    ...item,
+    baseline: snapshot({}),
+    followUp: { ...snapshot({}, "2026-07-18"), attributionWindows: [] },
+  });
+  api.get = routeGet({ list: [item], details: new Map([[ids.evaluation, detail]]) });
+  const view = render(createElement(EvaluationSection, { interventionId: ids.intervention, interventionRevision: 3 }));
+  assert.ok(await view.findByText("Insufficient evidence"));
+  assert.ok(await view.findByText(/Attribution authority is unavailable/));
+  assert.ok(view.getByText("The attribution windows are not comparable."));
+  assert.ok(view.getByText("The persisted evidence does not meet the minimum volume requirement."));
+  assert.ok(view.getByText("Attribution unavailable"));
+});
+
+test("[display] persisted threshold explanations show the exact immutable rule snapshot", async () => {
+  const thresholdSnapshots = [{
+    metric: "ctr",
+    directionality: "higher_is_better",
+    unit: "percent",
+    materialImprovement: { relative: 0.1, absolute: 0.2 },
+    materialWorsening: { relative: -0.1, absolute: -0.2 },
+    noiseBoundary: { relative: 0.03, absolute: 0.05, requiresBoth: true },
+    minimumEvidence: { spend: 50, impressions: 1000, clicks: 20, conversions: null },
+    requiresAttribution: true,
+    requiresConversionValue: false,
+  }];
+  api.get = routeGet({ details: new Map([[ids.evaluation, evaluationDetail({ thresholdSnapshots })]]) });
+  const view = render(createElement(EvaluationSection, { interventionId: ids.intervention, interventionRevision: 3 }));
+  assert.ok(await view.findByText("Persisted decision thresholds"));
+  assert.ok(view.getByText(/Improvement: 10% relative and 0.2 absolute/));
+  assert.ok(view.getByText(/spend 50, impressions 1,000, clicks 20/));
+  assert.ok(view.getByText(/Attribution required; conversion value not required/));
+});
+
+test("[display] overlap warning identifies each affected action through a bounded callback", () => {
+  const opened = [];
+  const view = render(createElement(EvaluationDetailEvidence, {
+    evaluation: evaluationDetail({ overlapInterventionIds: [ids.overlap] }),
+    onOpenIntervention: (id) => opened.push(id),
+  }));
+  fireEvent.click(view.getByRole("button", { name: "Open overlapping action 1" }));
+  assert.deepEqual(opened, [ids.overlap]);
 });
 
 test("[display] immutable previous Evaluation versions remain accessible by Evaluation ID", async () => {

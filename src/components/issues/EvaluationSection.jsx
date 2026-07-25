@@ -62,12 +62,21 @@ function Snapshot({ label, snapshot, metric }) {
         <span>{snapshot.currency}</span>
         <span>{snapshot.provenance.replaceAll("_", " ")}</span>
         <span>{snapshot.rowCount} persisted {snapshot.rowCount === 1 ? "row" : "rows"}</span>
+        <span>
+          Attribution {snapshot.attributionWindows.length > 0 ? snapshot.attributionWindows.join(", ") : "unavailable"}
+        </span>
       </div>
     </div>
   );
 }
 
-export function EvaluationDetailEvidence({ evaluation }) {
+const thresholdNumber = (value, { percent = false } = {}) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "unavailable";
+  const displayed = percent ? value * 100 : value;
+  return `${Math.abs(displayed).toLocaleString("en-US", { maximumFractionDigits: 2 })}${percent ? "%" : ""}`;
+};
+
+export function EvaluationDetailEvidence({ evaluation, onOpenIntervention = () => {} }) {
   const primaryResult = evaluation.metricResults.find((item) => item.metric === evaluation.primaryMetric) || null;
   const currency = evaluation.followUp?.currency || evaluation.baseline?.currency;
   const reasonLabels = [...new Set([
@@ -75,6 +84,10 @@ export function EvaluationDetailEvidence({ evaluation }) {
     ...evaluation.metricResults.flatMap((item) => item.reasonCodes),
   ].map(evaluationReasonLabel))];
   const overlap = evaluation.overlapInterventionIds.length > 0 || evaluation.reasonCodes.includes("overlapping_intervention") || evaluation.reasonCodes.includes("overlap_completeness_unavailable");
+  const lowConfidenceImprovement = evaluation.observedResult === "improved" && ["low", "unavailable"].includes(evaluation.confidenceLevel);
+  const attributionUnavailable = [evaluation.baseline, evaluation.followUp]
+    .filter(Boolean)
+    .some((snapshot) => snapshot.attributionWindows.length === 0);
 
   return (
     <div className="space-y-5">
@@ -98,9 +111,41 @@ export function EvaluationDetailEvidence({ evaluation }) {
       </div>
 
       {overlap && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div>
+              <p>Another recorded action overlaps this evidence window, so the comparison is not isolated.</p>
+              {evaluation.overlapInterventionIds.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {evaluation.overlapInterventionIds.map((interventionId, index) => (
+                    <button
+                      key={interventionId}
+                      type="button"
+                      onClick={() => onOpenIntervention(interventionId)}
+                      className="rounded-md border border-amber-300 bg-white/70 px-2 py-1 text-xs font-semibold outline-none hover:bg-white focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-800 dark:bg-slate-950/30 dark:hover:bg-slate-950/60"
+                    >
+                      Open overlapping action {index + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lowConfidenceImprovement && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>Another recorded action overlaps this evidence window, so the comparison is not isolated.</p>
+          <p>Improved movement is present, but confidence is {evaluation.confidenceLevel}. Treat this as directional evidence, not a definitive outcome.</p>
+        </div>
+      )}
+
+      {attributionUnavailable && (
+        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p>Attribution authority is unavailable for at least one persisted evidence window. Conversion comparisons must be treated as non-comparable.</p>
         </div>
       )}
 
@@ -159,6 +204,32 @@ export function EvaluationDetailEvidence({ evaluation }) {
         </div>
       )}
 
+      {evaluation.thresholdSnapshots.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Persisted decision thresholds</h4>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">The exact rule snapshot used for this immutable Evaluation version.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {evaluation.thresholdSnapshots.map((threshold) => {
+              const minimumEvidence = Object.entries(threshold.minimumEvidence)
+                .filter(([, value]) => value != null)
+                .map(([name, value]) => `${name.replaceAll("_", " ")} ${thresholdNumber(value)}`)
+                .join(", ");
+              return (
+                <div key={threshold.metric} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{evaluationMetricLabel(threshold.metric)}</p>
+                  <dl className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                    <div><dt className="font-medium">Material movement</dt><dd className="mt-0.5">Improvement: {thresholdNumber(threshold.materialImprovement.relative, { percent: true })} relative and {thresholdNumber(threshold.materialImprovement.absolute)} absolute. Worsening: {thresholdNumber(threshold.materialWorsening.relative, { percent: true })} relative and {thresholdNumber(threshold.materialWorsening.absolute)} absolute.</dd></div>
+                    <div><dt className="font-medium">Noise boundary</dt><dd className="mt-0.5">{thresholdNumber(threshold.noiseBoundary.relative, { percent: true })} relative and {thresholdNumber(threshold.noiseBoundary.absolute)} absolute{threshold.noiseBoundary.requiresBoth ? "; both are required" : "; either may qualify"}.</dd></div>
+                    <div><dt className="font-medium">Minimum evidence</dt><dd className="mt-0.5">{minimumEvidence || "No numeric minimum persisted"}</dd></div>
+                    <div><dt className="font-medium">Authority requirements</dt><dd className="mt-0.5">Attribution {threshold.requiresAttribution ? "required" : "not required"}; conversion value {threshold.requiresConversionValue ? "required" : "not required"}.</dd></div>
+                  </dl>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {reasonLabels.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Evidence notes</h4>
@@ -183,6 +254,7 @@ export default function EvaluationSection({
   interventionId,
   interventionRevision,
   onInterventionReload,
+  onOpenIntervention = () => {},
   onPendingChange = () => {},
 }) {
   const refreshErrorId = useId();
@@ -384,7 +456,7 @@ export default function EvaluationSection({
                 <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Clock3 size={15} aria-hidden="true" /> Loading persisted evaluation...</p>
               ) : visibleDetailRequest?.error ? (
                 <div role="alert" className="text-sm text-amber-800 dark:text-amber-200"><p>{visibleDetailRequest.error}</p><button type="button" onClick={() => setSelectedId(null)} className="mt-2 font-semibold underline">Return to latest version</button></div>
-              ) : visibleDetail ? <EvaluationDetailEvidence evaluation={visibleDetail} /> : latest ? (
+              ) : visibleDetail ? <EvaluationDetailEvidence evaluation={visibleDetail} onOpenIntervention={onOpenIntervention} /> : latest ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">Select an evaluation version.</p>
               ) : null}
             </div>

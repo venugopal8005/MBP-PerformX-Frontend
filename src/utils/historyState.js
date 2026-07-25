@@ -10,6 +10,10 @@ export const createCursorHistoryState = (key, { enabled = true } = {}) => ({
   nextCursor: null,
   isLoading: Boolean(enabled),
   isLoadingMore: false,
+  isRefreshing: false,
+  failedAppend: false,
+  failedRefresh: false,
+  invalidCursor: false,
 });
 
 export const cursorHistoryReducer = (state, action) => {
@@ -22,7 +26,23 @@ export const cursorHistoryReducer = (state, action) => {
 
   if (action.type === "request_started") {
     return action.append
-      ? { ...state, error: "", isLoadingMore: true }
+      ? {
+          ...state,
+          error: "",
+          isLoadingMore: true,
+          failedAppend: false,
+          failedRefresh: false,
+          invalidCursor: false,
+        }
+      : action.preserveItems
+        ? {
+            ...state,
+            error: "",
+            isRefreshing: true,
+            failedAppend: false,
+            failedRefresh: false,
+            invalidCursor: false,
+          }
       : {
           ...createCursorHistoryState(actionOwnerKey),
           isLoading: true,
@@ -37,6 +57,10 @@ export const cursorHistoryReducer = (state, action) => {
       nextCursor: action.page?.nextCursor || null,
       isLoading: false,
       isLoadingMore: false,
+      isRefreshing: false,
+      failedAppend: false,
+      failedRefresh: false,
+      invalidCursor: false,
     };
   }
   if (action.type === "request_failed") {
@@ -45,10 +69,20 @@ export const cursorHistoryReducer = (state, action) => {
       error: action.error || "Could not load historical records.",
       isLoading: false,
       isLoadingMore: false,
+      isRefreshing: false,
+      failedAppend: action.append === true,
+      failedRefresh: action.preserveItems === true,
+      invalidCursor: action.invalidCursor === true,
+      ...(action.invalidCursor === true ? { hasMore: false, nextCursor: null } : {}),
     };
   }
   if (action.type === "request_finished") {
-    return { ...state, isLoading: false, isLoadingMore: false };
+    return {
+      ...state,
+      isLoading: false,
+      isLoadingMore: false,
+      isRefreshing: false,
+    };
   }
 
   return state;
@@ -63,20 +97,59 @@ export const createRouteOwnedState = (key) => ({
   ownerKey: ownerKey(key),
   data: null,
   error: "",
+  refreshError: "",
   isLoading: true,
+  isRefreshing: false,
 });
 
 export const routeOwnedReducer = (state, action) => {
   const actionOwnerKey = ownerKey(action.ownerKey);
 
-  if (action.type === "request_started") return createRouteOwnedState(actionOwnerKey);
+  if (action.type === "request_started") {
+    const preserveData =
+      action.preserveData === true &&
+      state.ownerKey === actionOwnerKey &&
+      state.data !== null;
+    return preserveData
+      ? {
+          ...state,
+          error: "",
+          refreshError: "",
+          isLoading: false,
+          isRefreshing: true,
+        }
+      : createRouteOwnedState(actionOwnerKey);
+  }
   if (state.ownerKey !== actionOwnerKey) return state;
 
   if (action.type === "request_succeeded") {
-    return { ...state, data: action.data ?? null, error: "", isLoading: false };
+    return {
+      ...state,
+      data: action.data ?? null,
+      error: "",
+      refreshError: "",
+      isLoading: false,
+      isRefreshing: false,
+    };
   }
   if (action.type === "request_failed") {
-    return { ...state, data: null, error: action.error || "Could not load history.", isLoading: false };
+    const message = action.error || "Could not load history.";
+    return action.preserveData === true && state.data !== null
+      ? {
+          ...state,
+          error: "",
+          refreshError: message,
+          isLoading: false,
+          isRefreshing: false,
+        }
+      : {
+          ...state,
+          data: null,
+          error: message,
+          refreshError: "",
+          isLoading: false,
+          isRefreshing: false,
+        };
   }
 
   return state;

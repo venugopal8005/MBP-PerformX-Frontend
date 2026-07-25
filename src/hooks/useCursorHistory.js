@@ -6,6 +6,15 @@ import {
   visibleCursorHistoryState,
 } from "../utils/historyState";
 
+const INVALID_CURSOR_CODES = new Set(["INVALID_REVIEW_CURSOR", "INVALID_TIMELINE_CURSOR"]);
+
+const requestErrorCode = (error) =>
+  error?.response?.data?.code ||
+  error?.code ||
+  error?.cause?.response?.data?.code ||
+  error?.cause?.code ||
+  null;
+
 export default function useCursorHistory({ loadPage, resetKey, enabled = true }) {
   const normalizedResetKey = String(resetKey ?? "");
   const [state, dispatch] = useReducer(
@@ -29,15 +38,26 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
     enabledRef.current = enabled;
   }, [enabled]);
 
-  const execute = useCallback(async ({ append, generation, requestOwnerKey }) => {
+  const execute = useCallback(async ({
+    append,
+    preserveItems = false,
+    failureMessage,
+    generation,
+    requestOwnerKey,
+  }) => {
     if (!enabledRef.current || activeRequestRef.current) return;
     if (append && !hasMoreRef.current) return;
 
     const controller = new AbortController();
     const request = { controller, generation };
     activeRequestRef.current = request;
-    dispatch({ type: "request_started", ownerKey: requestOwnerKey, append });
-    if (!append) {
+    dispatch({
+      type: "request_started",
+      ownerKey: requestOwnerKey,
+      append,
+      preserveItems,
+    });
+    if (!append && !preserveItems) {
       cursorRef.current = null;
       hasMoreRef.current = false;
     }
@@ -69,10 +89,19 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
         generation !== generationRef.current ||
         requestOwnerKey !== ownerKeyRef.current
       ) return;
+      const invalidCursor = INVALID_CURSOR_CODES.has(requestErrorCode(requestError));
+      if (invalidCursor) {
+        cursorRef.current = null;
+        hasMoreRef.current = false;
+      }
       dispatch({
         type: "request_failed",
         ownerKey: requestOwnerKey,
+        append,
+        preserveItems,
+        invalidCursor,
         error:
+          failureMessage ||
           requestError?.response?.data?.message ||
           requestError?.message ||
           "Could not load historical records.",
@@ -135,7 +164,39 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
     });
   }, [execute]);
 
+  const revalidate = useCallback(({ failureMessage } = {}) => {
+    generationRef.current += 1;
+    activeRequestRef.current?.controller.abort();
+    activeRequestRef.current = null;
+    execute({
+      append: false,
+      preserveItems: true,
+      failureMessage,
+      generation: generationRef.current,
+      requestOwnerKey: ownerKeyRef.current,
+    });
+  }, [execute]);
+
   const visibleState = visibleCursorHistoryState(state, normalizedResetKey, { enabled });
+  const retry = useCallback(() => {
+    const restartAfterInvalidCursor = visibleState.invalidCursor === true;
+    execute({
+      append: !restartAfterInvalidCursor && visibleState.failedAppend && visibleState.items.length > 0,
+      preserveItems: restartAfterInvalidCursor
+        ? visibleState.items.length > 0
+        : visibleState.failedRefresh,
+      failureMessage: visibleState.failedRefresh ? visibleState.error : undefined,
+      generation: generationRef.current,
+      requestOwnerKey: ownerKeyRef.current,
+    });
+  }, [
+    execute,
+    visibleState.error,
+    visibleState.failedAppend,
+    visibleState.failedRefresh,
+    visibleState.invalidCursor,
+    visibleState.items.length,
+  ]);
 
   return {
     ...visibleState,
@@ -143,5 +204,7 @@ export default function useCursorHistory({ loadPage, resetKey, enabled = true })
       !visibleState.isLoading && !visibleState.error && visibleState.items.length === 0,
     loadMore,
     reload,
+    revalidate,
+    retry,
   };
 }

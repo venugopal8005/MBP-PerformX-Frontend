@@ -61,6 +61,7 @@ const evidence = (value) => ({
 
 export const mapIssue = (value = {}) => ({
   id: text(value.id),
+  clientId: text(value.clientId),
   status: text(value.status),
   severity: text(value.severity),
   previousSeverity: text(value.previousSeverity),
@@ -76,7 +77,24 @@ export const mapIssue = (value = {}) => ({
   resolvedAt: text(value.resolvedAt),
   reopenCount: count(value.reopenCount),
   reopenedAt: text(value.reopenedAt),
+  lifecycleRevision: count(value.lifecycleRevision),
+  latestInterventionId: text(value.latestInterventionId),
+  interventionCount: count(value.interventionCount) ?? 0,
+  lastInterventionAt: text(value.lastInterventionAt),
+  interventionRevision: count(value.interventionRevision) ?? 0,
+  predecessorIssueId: text(value.predecessorIssueId),
   hasPredecessor: Boolean(text(value.predecessorIssueId)),
+  monitoringStartedAt: text(value.monitoringStartedAt),
+  monitoringReason: text(value.monitoringReason),
+  monitoringInterventionId: text(value.monitoringInterventionId),
+  worseningStreak: count(value.worseningStreak) ?? 0,
+  worseningMetric: text(value.worseningMetric),
+  worseningStartedAt: text(value.worseningStartedAt),
+  latestEvaluationId: text(value.latestEvaluationId),
+  latestEvaluationStatus: text(value.latestEvaluationStatus),
+  latestEvaluationResult: text(value.latestEvaluationResult),
+  latestEvaluationConfidence: text(value.latestEvaluationConfidence),
+  latestEvaluationAt: text(value.latestEvaluationAt),
   identity: {
     client: identityValue(value.identity?.client),
     report: identityValue(value.identity?.report),
@@ -93,7 +111,11 @@ export const mapIssue = (value = {}) => ({
 
 export const mapIssueSignal = (value = {}) => ({
   id: text(value.id),
+  reportRunId: text(value.reportRunId),
+  campaignId: text(value.campaignId),
   occurrenceNumber: positiveCount(value.occurrenceNumber),
+  matchingStatus: text(value.matchingStatus),
+  matchingReason: text(value.matchingReason),
   type: text(value.type),
   severity: text(value.severity),
   title: text(value.title),
@@ -105,6 +127,79 @@ export const mapIssueSignal = (value = {}) => ({
 
 export const issueDetailPath = (issue) =>
   issue?.id ? `/issues/${encodeURIComponent(issue.id)}` : null;
+
+export const issueStablePeriodLabel = (predecessor, current) => {
+  const resolvedAt = Date.parse(predecessor?.resolvedAt || "");
+  const openedAt = Date.parse(current?.openedAt || "");
+  if (!Number.isFinite(resolvedAt) || !Number.isFinite(openedAt) || openedAt < resolvedAt) {
+    return "Stable period unavailable";
+  }
+  const totalHours = Math.floor((openedAt - resolvedAt) / (60 * 60 * 1000));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days && hours) return `${days} ${days === 1 ? "day" : "days"}, ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  if (days) return `${days} ${days === 1 ? "day" : "days"}`;
+  return `${totalHours} ${totalHours === 1 ? "hour" : "hours"}`;
+};
+
+export const issueLifecycleMessages = (issue) => {
+  if (!issue) return [];
+  const messages = [];
+  if (issue.monitoringInterventionId || issue.monitoringStartedAt) {
+    messages.push({
+      key: "action_recorded",
+      title: "Action recorded",
+      description: issue.monitoringStartedAt
+        ? `Monitoring began ${issueDate(issue.monitoringStartedAt)}.`
+        : "The Issue entered monitoring after a recorded action.",
+    });
+  }
+  if (issue.status === "monitoring") {
+    messages.push({
+      key: "monitoring",
+      title: "Issue is monitoring",
+      description: issue.latestEvaluationStatus === "awaiting_follow_up"
+        ? "Awaiting enough persisted follow-up evidence for an Evaluation."
+        : "Narrative is waiting for enough trusted evidence before changing the lifecycle state.",
+    });
+  }
+  if (issue.status === "monitoring" && issue.worseningStreak === 1) {
+    messages.push({
+      key: "one_concern",
+      title: "One concerning observation",
+      description: "One worsening observation was recorded, but this Issue has not been reopened.",
+    });
+  }
+  if (issue.status === "open" && issue.reopenedAt && issue.worseningStreak > 0) {
+    const repeated = issue.worseningStreak > 1;
+    messages.push({
+      key: "reopened",
+      title: repeated
+        ? "Repeated worsening reopened the Issue"
+        : "Strong critical evidence reopened the Issue",
+      description: repeated
+        ? `${issue.worseningStreak} consecutive concerning observations were persisted${issue.worseningMetric ? ` for ${issueLabel(issue.worseningMetric)}` : ""}.`
+        : `One critical trusted observation was sufficient under the persisted lifecycle policy${issue.worseningMetric ? ` for ${issueLabel(issue.worseningMetric)}` : ""}.`,
+    });
+  }
+  if (issue.status === "monitoring" && issue.absenceStreak > 0) {
+    messages.push({
+      key: "clean_evidence",
+      title: "Clean evidence is accumulating",
+      description: `${issue.absenceStreak} trusted clean ${issue.absenceStreak === 1 ? "observation has" : "observations have"} been persisted. Resolution has not been assumed early.`,
+    });
+  }
+  if (issue.status === "resolved") {
+    messages.push({
+      key: "resolved",
+      title: "Issue resolved after required evidence",
+      description: issue.resolvedAt
+        ? `The persisted lifecycle resolved this Issue ${issueDate(issue.resolvedAt)}.`
+        : "The persisted lifecycle recorded the required recovery evidence.",
+    });
+  }
+  return messages;
+};
 
 export const issueLabel = (value, fallback = "Unknown") =>
   text(value)?.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) ||
